@@ -2,9 +2,9 @@
 
 ## Phase 0 — Foundation
 
-- Generate 1 Level
-- No enemy, just fly to next bridge
-- Detect collision with river bank, respawn at the bridge if crash
+- Procedural river generation with continuous forward scroll
+- Detect collision with river banks and bridges
+- Fuel burn/refuel loop and missile firing
 - Setup web client shell.
 - Define shared protocol (input/state messages).
 - Implement config-based auth (`/auth/login`) for one dev user.

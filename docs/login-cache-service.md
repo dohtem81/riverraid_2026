@@ -1,5 +1,10 @@
 # Login Cache Service
 
+## Implementation Status
+
+- This service boundary is not implemented in the current Phase 0 backend.
+- Login currently validates a single configured credential source from environment settings.
+
 ## Goal
 
 On login, load player profile from Redis if recently active (last 24h). If missing, read from Postgres, then cache in Redis with 24h TTL.
@@ -11,7 +16,7 @@ This is a separate internal service boundary used by login/auth flow.
 - Input: `player_id`
 - Output: hydrated player profile + source (`redis` or `postgres`)
 
-## Implemented Contract
+## Planned Contract
 
 Endpoint:
 

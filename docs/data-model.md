@@ -1,5 +1,10 @@
 # Data Model (MVP v1)
 
+## Current Status
+
+- The running Phase 0 backend does not persist data to a database yet.
+- This document defines the planned relational model for upcoming persistence phases.
+
 ## Purpose
 
 Define persistent entities for RiverRaid authentication, player progression, and score tracking.

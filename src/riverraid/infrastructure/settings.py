@@ -19,7 +19,7 @@ def load_settings() -> Settings:
         auth_username=os.getenv("AUTH_USERNAME", "pilot"),
         auth_password=os.getenv("AUTH_PASSWORD", "pilot1234"),
         auth_player_id=os.getenv("AUTH_PLAYER_ID", "11111111-1111-1111-1111-111111111111"),
-        jwt_secret=os.getenv("JWT_SECRET", "change-me-in-prod"),
+        jwt_secret=os.getenv("JWT_SECRET", "dev-secret-at-least-32-characters-long"),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256"),
         access_token_ttl_seconds=int(os.getenv("ACCESS_TOKEN_TTL_SECONDS", "3600")),
     )

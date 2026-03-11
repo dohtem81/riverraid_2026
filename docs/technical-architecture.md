@@ -1,5 +1,12 @@
 # Technical Architecture (v1)
 
+## Current Implementation Snapshot (March 2026)
+
+- Runtime is a single FastAPI service.
+- Auth is config-based (single configured dev user) with JWT issuance/validation.
+- Realtime gameplay runs in-process in the WebSocket gateway and game session service.
+- No PostgreSQL or Redis integration is implemented yet.
+
 ## High-Level
 
 - **Client:** Browser-based 2D renderer (Canvas/WebGL) with input capture and prediction.
@@ -58,23 +65,23 @@ Architecture fitness checks:
 ## Authoritative Simulation Model
 
 - Tick rate: **30 TPS** (fixed timestep).
-- Snapshot broadcast: **10–15 Hz**.
-- Client sends **input-only commands** (`thrust`, `turn`, `fire`, `dock_request`) with increasing `input_seq`.
+- Snapshot broadcast: **~10 Hz** (plus immediate snapshots after accepted input events).
+- Client sends **input-only commands** (`turn`, `fast`, `fire`) with increasing `input_seq`.
 - Server applies validated inputs at tick boundaries and returns snapshots with `last_processed_input_seq` for reconciliation.
 
 ## Backend Responsibilities
 
 - Verify JWT and map subject to existing `players.id`.
-- Bind the player connection to exactly one active `session_id`.
+- Bind the connection to an in-memory `session_id`.
 - Validate input schema/rates and reject invalid commands.
 - Resolve movement, collision, combat, scoring, fuel consumption/refuel.
-- Persist checkpoints and end-of-run scores.
+- Emit event + snapshot messages for the client HUD/render loop.
 
 ## Data Ownership
 
 - **Authoritative runtime state:** in-memory inside session runtime.
-- **Durable state:** PostgreSQL (`players`, `player_sessions`, `highscores`, optional `player_checkpoints`).
-- **Cache/transient state:** Redis optional; never authoritative for simulation.
+- **Durable state (planned):** PostgreSQL (`players`, `player_sessions`, `highscores`, optional `player_checkpoints`).
+- **Cache/transient state (planned):** Redis optional; never authoritative for simulation.
 
 ## Security and Fairness
 
@@ -87,9 +94,9 @@ Architecture fitness checks:
 
 - Python 3.12+
 - FastAPI + Uvicorn
-- SQLAlchemy + Alembic
-- PostgreSQL 15+
-- Redis (optional in Phase 1; recommended in Phase 2)
+- SQLAlchemy + Alembic (planned)
+- PostgreSQL 15+ (planned)
+- Redis (optional, planned)
 
 ## Deployment Plan
 
@@ -97,8 +104,8 @@ Architecture fitness checks:
 
 - Single container image.
 - One service instance.
-- One PostgreSQL instance.
-- Optional Redis sidecar/managed instance.
+- No database dependency in current implementation.
+- Optional PostgreSQL/Redis integration planned for next phases.
 
 Gameplay mode for MVP:
 - One active player per game session.

@@ -8,7 +8,7 @@ services:
       AUTH_USERNAME: pilot
       AUTH_PASSWORD: pilot1234
       AUTH_PLAYER_ID: 11111111-1111-1111-1111-111111111111
-      JWT_SECRET: dev-secret-change-me
+      JWT_SECRET: dev-secret-at-least-32-characters-long
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_TTL_SECONDS: 3600
 
@@ -19,7 +19,7 @@ services:
       AUTH_USERNAME: pilot
       AUTH_PASSWORD: pilot1234
       AUTH_PLAYER_ID: 11111111-1111-1111-1111-111111111111
-      JWT_SECRET: dev-secret-change-me
+      JWT_SECRET: dev-secret-at-least-32-characters-long
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_TTL_SECONDS: 3600
     command: ["pytest", "-q"]

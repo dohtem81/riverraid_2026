@@ -1,5 +1,12 @@
 # System Design (MVP v1)
 
+## Current Status (March 2026)
+
+- Implemented as a single FastAPI process with one WebSocket gateway.
+- Auth is config-backed (`/api/v1/auth/login`) with JWT token issuance.
+- WebSocket join validates JWT and runs server-authoritative single-player simulation.
+- Database/cache-backed persistence is not implemented yet.
+
 ## Purpose
 
 Define the runtime architecture for a web-based River Raid single-player prototype with a server-authoritative realtime backend.
@@ -22,7 +29,7 @@ Single deployable service (modular monolith):
 4. Persistence adapter (PostgreSQL read/write)
 5. Optional cache adapter (Redis for session/presence/rate limiting)
 
-For MVP, all modules run in one process image and one database.
+Current codebase runs modules 1-3 in one process image. Items 4-5 are planned.
 
 ## Clean Architecture Mapping
 
@@ -79,9 +86,9 @@ For MVP, all modules run in one process image and one database.
 ### 1) HTTP API
 
 Responsibilities:
-- Registration and login.
-- Token refresh/revoke.
-- Fetch player profile and lightweight bootstrap payload.
+- Login endpoint for configured dev credentials.
+- `register`, `refresh`, and `logout` placeholders returning `501`.
+- Health and demo page endpoints.
 
 Does not run simulation logic.
 
@@ -90,7 +97,7 @@ Does not run simulation logic.
 Responsibilities:
 - Upgrade authenticated clients to WebSocket.
 - Validate token and bind `player_id` to a game session.
-- Enforce per-connection rate limits and payload validation.
+- Enforce payload validation and message type handling.
 - Route validated `input` messages to the session runtime.
 
 ### 3) Game Session Runtime (Authoritative)
@@ -112,6 +119,9 @@ Responsibilities:
 - Persist checkpoints and session-end outcomes.
 - Write highscores and progression.
 
+Status:
+- Planned, not implemented in current code.
+
 Avoid per-tick DB writes. Use checkpointed or event-triggered persistence.
 
 ### 5) Redis (Optional in MVP)
@@ -123,6 +133,9 @@ Use only for:
 
 Do not use Redis as authoritative simulation state.
 
+Status:
+- Planned, not implemented in current code.
+
 ## Data Flow
 
 ### Login + Join
@@ -130,7 +143,7 @@ Do not use Redis as authoritative simulation state.
 1. Client calls HTTP login and receives JWT access token.
 2. Client opens WebSocket with token.
 3. Gateway authenticates and attaches player to a dedicated single-player game session.
-4. Runtime loads spawn/checkpoint state and emits `join_ack` + initial snapshot.
+4. Runtime emits `join_ack` + initial snapshot.
 
 ### Realtime Loop
 
@@ -143,13 +156,15 @@ Do not use Redis as authoritative simulation state.
 
 - On bridge reached, death, refuel milestone, or match end: write durable updates.
 
+Current status:
+- Not implemented yet.
+
 ## Scaling Plan
 
 ### Phase 1 (MVP)
 
 - 1 service instance.
-- 1 PostgreSQL instance.
-- Optional Redis.
+- No required database/cache for current runtime.
 - Single-player sessions only (one player per session).
 
 ### Phase 2
@@ -161,17 +176,16 @@ Do not use Redis as authoritative simulation state.
 
 ## Failure Handling
 
-- If DB unavailable: reject new joins requiring persistence; keep existing sessions alive where possible.
-- If Redis unavailable: continue operation using DB fallback.
-- On WebSocket disconnect: retain player slot briefly (reconnect grace window, e.g., 15s).
-- On reconnect: restore session binding and send fresh snapshot.
+- On unhandled server exception in WebSocket handling: socket is closed.
+- Connection/session persistence across reconnects is not implemented.
 
 ## Security and Anti-Cheat
 
 - Server authoritative movement/combat/fuel.
-- Input rate limits and schema validation.
+- Input schema validation.
 - Clamp impossible deltas (turn rate, fire rate, speed).
-- JWT short-lived access tokens; refresh token rotation/revocation for HTTP auth.
+- JWT short-lived access tokens.
+- Refresh token rotation/revocation is planned, not implemented.
 
 ## Observability (Minimum)
 
