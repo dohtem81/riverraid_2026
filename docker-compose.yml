@@ -1,0 +1,25 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: dev
+      AUTH_USERNAME: pilot
+      AUTH_PASSWORD: pilot1234
+      AUTH_PLAYER_ID: 11111111-1111-1111-1111-111111111111
+      JWT_SECRET: dev-secret-change-me
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_TTL_SECONDS: 3600
+
+  tests:
+    build: .
+    environment:
+      APP_ENV: dev
+      AUTH_USERNAME: pilot
+      AUTH_PASSWORD: pilot1234
+      AUTH_PLAYER_ID: 11111111-1111-1111-1111-111111111111
+      JWT_SECRET: dev-secret-change-me
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_TTL_SECONDS: 3600
+    command: ["pytest", "-q"]
