@@ -4,7 +4,7 @@ This folder contains project documentation for **RiverRaid** (2D single-player w
 
 ## Demo
 
-<video src="./demo/recording-2026-03-12T04-05-59-348Z.webm" controls width="800"></video>
+[![Demo recording](./originalgame/Screenshot2026-03-11220822.png)](./demo/recording-2026-03-12T04-05-59-348Z.webm)
 
 ## Docs Index
 
