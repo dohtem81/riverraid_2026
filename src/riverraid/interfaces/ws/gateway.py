@@ -41,73 +41,19 @@ class _SessionState:
 class WebSocketGateway:
     def __init__(self, validate_join_token: ValidateJoinToken, cfg: GameConfig | None = None) -> None:
         self._validate_join_token = validate_join_token
-        c = cfg or load_game_config()
-        self._world_width = c.world_width
-        self._step_x = c.step_x
-        self._segment_height = c.segment_height
-        self._river_max_width = c.river_max_width
-        self._bank_margin = c.bank_margin
-        self._viewport_height = c.viewport_height
-        self._plane_offset_from_camera = c.plane_offset_from_camera
-        self._scroll_speed = c.scroll_speed
-        self._tick_interval_seconds = c.tick_interval_seconds
-        self._river_generation_buffer = c.river_generation_buffer
-        self._plane_half_width = c.plane_half_width
-        self._fuel_burn_per_second = c.fuel_burn_per_second
-        self._fuel_capacity = c.fuel_capacity
-        self._plane_width = c.plane_width
-        self._river_min_width = c.river_min_width
-        self._river_width_variation_step = c.river_width_variation_step
-        self._fuel_refill_per_second = c.fuel_refill_per_second
-        self._fuel_station_width = c.fuel_station_width
-        self._fuel_station_letter_count = c.fuel_station_letter_count
-        self._fuel_station_height = c.fuel_station_height
-        self._fuel_station_min_spacing = c.fuel_station_min_spacing
-        self._missile_speed = c.missile_speed
-        self._missile_width = c.missile_width
-        self._missile_height = c.missile_height
-        self._bridge_interval_y = c.bridge_interval_y
-        self._bridge_height = c.bridge_height
-        self._bridge_narrow_min = c.bridge_narrow_min
-        self._bridge_narrow_max = c.bridge_narrow_max
-        self._helicopter_speed = c.helicopter_speed
-        self._helicopter_width = c.helicopter_width
-        self._helicopter_height = c.helicopter_height
-        self._helicopter_min_spacing = c.helicopter_min_spacing
-        self._helicopter_score = c.helicopter_score
-        self._session = GameSessionService(
-            world_width=self._world_width,
-            step_x=self._step_x,
-            segment_height=self._segment_height,
-            river_max_width=self._river_max_width,
-            bank_margin=self._bank_margin,
-            viewport_height=self._viewport_height,
-            plane_offset_from_camera=self._plane_offset_from_camera,
-            river_generation_buffer=self._river_generation_buffer,
-            plane_half_width=self._plane_half_width,
-            fuel_burn_per_second=self._fuel_burn_per_second,
-            fuel_capacity=self._fuel_capacity,
-            plane_width=self._plane_width,
-            river_min_width=self._river_min_width,
-            river_width_variation_step=self._river_width_variation_step,
-            fuel_refill_per_second=self._fuel_refill_per_second,
-            fuel_station_width=self._fuel_station_width,
-            fuel_station_letter_count=self._fuel_station_letter_count,
-            fuel_station_height=self._fuel_station_height,
-            fuel_station_min_spacing=self._fuel_station_min_spacing,
-            missile_speed=self._missile_speed,
-            missile_width=self._missile_width,
-            missile_height=self._missile_height,
-            bridge_interval_y=self._bridge_interval_y,
-            bridge_height=self._bridge_height,
-            bridge_narrow_min=self._bridge_narrow_min,
-            bridge_narrow_max=self._bridge_narrow_max,
-            helicopter_speed=self._helicopter_speed,
-            helicopter_width=self._helicopter_width,
-            helicopter_height=self._helicopter_height,
-            helicopter_min_spacing=self._helicopter_min_spacing,
-            helicopter_score=self._helicopter_score,
-        )
+        self._cfg = cfg or load_game_config()
+        self._session = GameSessionService(cfg=self._cfg)
+
+    def __getattr__(self, name: str):
+        # Transparently proxy `self._xxx` accesses to the config object so that
+        # test code (e.g. gateway._missile_width) continues to work without the
+        # gateway needing to copy every config field as an instance attribute.
+        cfg_name = name.lstrip("_")
+        try:
+            cfg = object.__getattribute__(self, "_cfg")
+            return getattr(cfg, cfg_name)
+        except AttributeError:
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute {name!r}") from None
 
     async def handle(self, websocket: WebSocket) -> None:
         await websocket.accept()
