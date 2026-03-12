@@ -4,7 +4,11 @@ This folder contains project documentation for **RiverRaid** (2D single-player w
 
 ## Demo
 
-[![Demo recording](./originalgame/Screenshot2026-03-11220822.png)](./demo/recording-2026-03-12T04-05-59-348Z.webm)
+<video controls width="900">
+	<source src="./demo/recording-2026-03-12T04-05-59-348Z.webm" type="video/webm" />
+	Your browser does not support the video tag. Open the demo recording directly:
+	<a href="./demo/recording-2026-03-12T04-05-59-348Z.webm">demo video</a>.
+</video>
 
 ## Docs Index
 
