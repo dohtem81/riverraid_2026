@@ -8,6 +8,7 @@ from fastapi import WebSocket
 
 from riverraid.application.game_session_service import GameSessionService
 from riverraid.application.use_cases import ValidateJoinToken
+from riverraid.infrastructure.game_config import GameConfig, load_game_config
 from riverraid.infrastructure.jwt_token_service import TokenValidationError
 
 
@@ -27,6 +28,9 @@ class _SessionState:
     next_missile_id: int = 1
     next_bridge_id: int = 1
     next_bridge_y: float = 0.0
+    helicopters: list[dict] = field(default_factory=list)
+    next_helicopter_id: int = 1
+    next_helicopter_y: float = 0.0
     level: int = 1
     next_level_bridge_y: float = 0.0
     last_crossed_bridge_y: float | None = None
@@ -35,36 +39,42 @@ class _SessionState:
 
 
 class WebSocketGateway:
-    def __init__(self, validate_join_token: ValidateJoinToken) -> None:
+    def __init__(self, validate_join_token: ValidateJoinToken, cfg: GameConfig | None = None) -> None:
         self._validate_join_token = validate_join_token
-        self._world_width = 1000.0
-        self._step_x = 5.0
-        self._segment_height = 40.0
-        self._river_max_width = 420.0
-        self._bank_margin = 60.0
-        self._viewport_height = 600.0
-        self._plane_offset_from_camera = 60.0
-        self._scroll_speed = 120.0
-        self._tick_interval_seconds = 0.1
-        self._river_generation_buffer = 200.0
-        self._plane_half_width = 8.0
-        self._fuel_burn_per_second = 1.0
-        self._fuel_capacity = 100.0
-        self._plane_width = self._plane_half_width * 2.0
-        self._river_min_width = self._plane_width * 9.0
-        self._river_width_variation_step = 18.0
-        self._fuel_refill_per_second = 20.0
-        self._fuel_station_width = self._plane_width
-        self._fuel_station_letter_count = 4
-        self._fuel_station_height = self._plane_width * self._fuel_station_letter_count
-        self._fuel_station_min_spacing = self._scroll_speed * 8.0
-        self._missile_speed = 300.0
-        self._missile_width = 4.0
-        self._missile_height = 12.0
-        self._bridge_interval_y = self._scroll_speed * 30.0
-        self._bridge_height = 20.0
-        self._bridge_narrow_min = self._plane_width * 5.0
-        self._bridge_narrow_max = self._plane_width * 10.0
+        c = cfg or load_game_config()
+        self._world_width = c.world_width
+        self._step_x = c.step_x
+        self._segment_height = c.segment_height
+        self._river_max_width = c.river_max_width
+        self._bank_margin = c.bank_margin
+        self._viewport_height = c.viewport_height
+        self._plane_offset_from_camera = c.plane_offset_from_camera
+        self._scroll_speed = c.scroll_speed
+        self._tick_interval_seconds = c.tick_interval_seconds
+        self._river_generation_buffer = c.river_generation_buffer
+        self._plane_half_width = c.plane_half_width
+        self._fuel_burn_per_second = c.fuel_burn_per_second
+        self._fuel_capacity = c.fuel_capacity
+        self._plane_width = c.plane_width
+        self._river_min_width = c.river_min_width
+        self._river_width_variation_step = c.river_width_variation_step
+        self._fuel_refill_per_second = c.fuel_refill_per_second
+        self._fuel_station_width = c.fuel_station_width
+        self._fuel_station_letter_count = c.fuel_station_letter_count
+        self._fuel_station_height = c.fuel_station_height
+        self._fuel_station_min_spacing = c.fuel_station_min_spacing
+        self._missile_speed = c.missile_speed
+        self._missile_width = c.missile_width
+        self._missile_height = c.missile_height
+        self._bridge_interval_y = c.bridge_interval_y
+        self._bridge_height = c.bridge_height
+        self._bridge_narrow_min = c.bridge_narrow_min
+        self._bridge_narrow_max = c.bridge_narrow_max
+        self._helicopter_speed = c.helicopter_speed
+        self._helicopter_width = c.helicopter_width
+        self._helicopter_height = c.helicopter_height
+        self._helicopter_min_spacing = c.helicopter_min_spacing
+        self._helicopter_score = c.helicopter_score
         self._session = GameSessionService(
             world_width=self._world_width,
             step_x=self._step_x,
@@ -92,6 +102,11 @@ class WebSocketGateway:
             bridge_height=self._bridge_height,
             bridge_narrow_min=self._bridge_narrow_min,
             bridge_narrow_max=self._bridge_narrow_max,
+            helicopter_speed=self._helicopter_speed,
+            helicopter_width=self._helicopter_width,
+            helicopter_height=self._helicopter_height,
+            helicopter_min_spacing=self._helicopter_min_spacing,
+            helicopter_score=self._helicopter_score,
         )
 
     async def handle(self, websocket: WebSocket) -> None:
@@ -132,12 +147,13 @@ class WebSocketGateway:
                         self._apply_refuel_from_stations(plane_state=g.plane_state, fuel_stations=g.fuel_stations, elapsed_seconds=elapsed)
                         g.missiles = self._advance_missiles_and_check_collisions(
                             missiles=g.missiles, fuel_stations=g.fuel_stations, bridges=g.bridges,
-                            plane_state=g.plane_state, elapsed_seconds=elapsed,
+                            helicopters=g.helicopters, plane_state=g.plane_state, elapsed_seconds=elapsed,
                         )
                         g.missiles = self._session.prune_old_missiles(missiles=g.missiles, camera_y=g.camera_y)
                         for coll_event in [
                             self._handle_bank_collision(plane_state=g.plane_state, river_banks=g.river_banks),
                             self._handle_bridge_collision(plane_state=g.plane_state, bridges=g.bridges),
+                            self._handle_helicopter_collision(plane_state=g.plane_state, helicopters=g.helicopters),
                         ]:
                             if coll_event is None:
                                 continue
@@ -308,6 +324,12 @@ class WebSocketGateway:
             river_banks=g.river_banks, target_y=gen_target,
         )
         g.bridges = self._session.prune_old_bridges(bridges=g.bridges, camera_y=g.camera_y)
+        g.helicopters, g.next_helicopter_id, g.next_helicopter_y = self._session.ensure_helicopters_until(
+            helicopters=g.helicopters, next_helicopter_id=g.next_helicopter_id,
+            next_helicopter_y=g.next_helicopter_y, river_banks=g.river_banks, target_y=gen_target,
+        )
+        self._session.advance_helicopters(helicopters=g.helicopters, elapsed_seconds=elapsed)
+        g.helicopters = self._session.prune_old_helicopters(helicopters=g.helicopters, camera_y=g.camera_y)
         while g.camera_y > g.next_level_bridge_y + self._bridge_height:
             g.last_crossed_bridge_y = g.next_level_bridge_y
             g.level += 1
@@ -337,15 +359,22 @@ class WebSocketGateway:
         )
         g.missiles = []
         g.bridges = []
+        g.helicopters = []
+        g.next_helicopter_id = 1
+        g.next_helicopter_y = 0.0
         g.plane_state = self._session.initial_plane_state()
 
     def _apply_crash_respawn(self, event_data: dict, g: _SessionState) -> None:
         respawn_camera_y = self._respawn_camera_y(g.last_crossed_bridge_y)
         event_data["respawn_camera_y"] = round(respawn_camera_y, 2)
         g.camera_y = respawn_camera_y
-        g.plane_state["y"] = respawn_camera_y + self._plane_offset_from_camera
+        plane_y = respawn_camera_y + self._plane_offset_from_camera
+        g.plane_state["y"] = plane_y
         g.next_fuel_station_eligible_y = respawn_camera_y
         g.missiles = []
+        # Place the plane at the river centre at its new y position.
+        left_x, right_x = self._session.bank_bounds_at_y(river_banks=g.river_banks, y=plane_y)
+        g.plane_state["x"] = (left_x + right_x) / 2.0
 
     async def _emit_event(self, websocket: WebSocket, session_id: str, seq: int, payload: dict) -> None:
         await websocket.send_json(
@@ -365,7 +394,8 @@ class WebSocketGateway:
                     plane_state=g.plane_state,
                     river_banks=self._session.banks_in_view(river_banks=g.river_banks, camera_y=g.camera_y),
                     entities=self._session.all_entities_in_view(
-                        fuel_stations=g.fuel_stations, missiles=g.missiles, bridges=g.bridges, camera_y=g.camera_y,
+                        fuel_stations=g.fuel_stations, missiles=g.missiles,
+                        bridges=g.bridges, helicopters=g.helicopters, camera_y=g.camera_y,
                     ),
                     camera_y=g.camera_y,
                     level=g.level,
@@ -386,6 +416,9 @@ class WebSocketGateway:
     def _handle_bank_collision(self, plane_state: dict, river_banks: list[dict]) -> dict | None:
         return self._session.handle_bank_collision(plane_state=plane_state, river_banks=river_banks)
 
+    def _handle_helicopter_collision(self, plane_state: dict, helicopters: list[dict]) -> dict | None:
+        return self._session.handle_helicopter_collision(plane_state=plane_state, helicopters=helicopters)
+
     def _handle_bridge_collision(self, plane_state: dict, bridges: list[dict]) -> dict | None:
         return self._session.handle_bridge_collision(plane_state=plane_state, bridges=bridges)
 
@@ -398,16 +431,21 @@ class WebSocketGateway:
         return self._session.apply_fuel_burn_and_crash(plane_state=plane_state, elapsed_seconds=elapsed_seconds)
 
     def _advance_missiles_and_check_collisions(
-        self, missiles: list[dict], fuel_stations: list[dict], bridges: list[dict], plane_state: dict, elapsed_seconds: float
+        self, missiles: list[dict], fuel_stations: list[dict], bridges: list[dict], plane_state: dict,
+        elapsed_seconds: float, helicopters: list[dict] | None = None,
     ) -> list[dict]:
         return self._session.advance_missiles_and_check_collisions(
             missiles=missiles, fuel_stations=fuel_stations, bridges=bridges,
-            plane_state=plane_state, elapsed_seconds=elapsed_seconds,
+            helicopters=helicopters, plane_state=plane_state, elapsed_seconds=elapsed_seconds,
         )
 
-    def _all_entities_in_view(self, fuel_stations: list[dict], missiles: list[dict], bridges: list[dict], camera_y: float) -> list[dict]:
+    def _all_entities_in_view(
+        self, fuel_stations: list[dict], missiles: list[dict], bridges: list[dict],
+        camera_y: float, helicopters: list[dict] | None = None,
+    ) -> list[dict]:
         return self._session.all_entities_in_view(
-            fuel_stations=fuel_stations, missiles=missiles, bridges=bridges, camera_y=camera_y,
+            fuel_stations=fuel_stations, missiles=missiles, bridges=bridges,
+            helicopters=helicopters, camera_y=camera_y,
         )
 
     def _prune_old_banks(self, river_banks: list[dict], camera_y: float) -> list[dict]:
@@ -430,6 +468,22 @@ class WebSocketGateway:
             bridges=bridges, next_bridge_y=next_bridge_y, next_bridge_id=next_bridge_id,
             river_banks=river_banks, target_y=target_y,
         )
+
+    def _ensure_helicopters_until(
+        self, helicopters: list[dict], next_helicopter_id: int, next_helicopter_y: float,
+        river_banks: list[dict], target_y: float,
+    ) -> tuple[list[dict], int, float]:
+        return self._session.ensure_helicopters_until(
+            helicopters=helicopters, next_helicopter_id=next_helicopter_id,
+            next_helicopter_y=next_helicopter_y, river_banks=river_banks, target_y=target_y,
+        )
+
+    @staticmethod
+    def _advance_helicopters(helicopters: list[dict], elapsed_seconds: float) -> None:
+        GameSessionService.advance_helicopters(helicopters=helicopters, elapsed_seconds=elapsed_seconds)
+
+    def _prune_old_helicopters(self, helicopters: list[dict], camera_y: float) -> list[dict]:
+        return self._session.prune_old_helicopters(helicopters=helicopters, camera_y=camera_y)
 
     def _initial_plane_state(self) -> dict:
         return self._session.initial_plane_state()

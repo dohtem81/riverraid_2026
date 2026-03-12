@@ -1,0 +1,115 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# RiverRaid – game configuration
+# All numeric values are in "game units" (pixels at 1 ×  zoom) or seconds.
+# Derived values (plane_width, bridge_interval_y, etc.) are computed in code
+# from  the base values below – see infrastructure/game_config.py.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── World ────────────────────────────────────────────────────────────────────
+
+# Total horizontal extent of the game world.
+world_width: 1000.0
+
+# Visible vertical slice rendered on the client canvas.
+viewport_height: 600.0
+
+# How fast the camera (and river) scrolls upward, in game-units per second.
+# This is also the plane's forward speed – higher = harder difficulty.
+scroll_speed: 120.0
+
+# Server game-loop interval in seconds (1 / tick_rate).
+# 0.1 → 10 ticks/second; reduce to tighten physics at the cost of CPU.
+tick_interval_seconds: 0.1
+
+# How many units ahead of the visible viewport the river geometry is
+# pre-generated, to avoid pop-in when the camera scrolls forward.
+river_generation_buffer: 200.0
+
+# ── River ────────────────────────────────────────────────────────────────────
+
+# Vertical height of each river-bank polygon segment.
+# Smaller = smoother curves; larger = more angular / easier to generate.
+segment_height: 40.0
+
+# Starting (maximum) width of the river at the beginning of the game.
+# The river can narrow as the level progresses.
+river_max_width: 420.0
+
+# Minimum blank space between the river edge and the world edge.
+# Prevents the river bank from touching the screen border.
+bank_margin: 60.0
+
+# Maximum change in river width per segment step.
+# Controls how quickly the river bends / narrows from one segment to the next.
+river_width_variation_step: 18.0
+
+# ── Plane ────────────────────────────────────────────────────────────────────
+
+# Half the plane's collision box width.
+# Full plane_width (= plane_half_width × 2) is used for fuel-station sizing,
+# river minimum width, bridge gap sizes, etc.
+plane_half_width: 8.0
+
+# Horizontal movement in game-units applied per left/right input event.
+step_x: 5.0
+
+# How far above the bottom of the viewport the plane is drawn / positioned.
+# A larger value gives the player more look-ahead below the plane.
+plane_offset_from_camera: 60.0
+
+# ── Fuel ─────────────────────────────────────────────────────────────────────
+
+# Fuel consumed per second while flying.
+fuel_burn_per_second: 1.0
+
+# Maximum fuel the tank can hold (shown as 100 % on the gauge).
+fuel_capacity: 100.0
+
+# Fuel added per second while the plane is over a fuel station.
+fuel_refill_per_second: 20.0
+
+# ── Fuel station ─────────────────────────────────────────────────────────────
+
+# Number of stacked letter-cells in the "FUEL" depot graphic (F / U / E / L).
+# Also determines the station height: fuel_station_height = plane_width × this.
+fuel_station_letter_count: 4
+
+# ── Missiles ─────────────────────────────────────────────────────────────────
+
+# Speed of player-fired missiles in game-units per second.
+missile_speed: 300.0
+
+# Missile collision box width.
+missile_width: 4.0
+
+# Missile collision box height.
+missile_height: 12.0
+
+# ── Bridges ──────────────────────────────────────────────────────────────────
+
+# Vertical height of each bridge (collision box + visual).
+bridge_height: 20.0
+
+# Distance between consecutive bridges is derived as: scroll_speed × 30.
+# At scroll_speed = 120 this equals 3600 units ≈ 30 seconds of travel.
+# To change bridge frequency, adjust scroll_speed or edit game_config.py.
+
+# Bridge gap minimum and maximum are derived as multiples of plane_width:
+#   bridge_narrow_min = plane_width × 5
+#   bridge_narrow_max = plane_width × 10
+# Edit game_config.py if you need independent control.
+
+# ── Helicopters ───────────────────────────────────────────────────────────────
+
+# Lateral speed of helicopters in game-units per second (side-to-side patrol).
+helicopter_speed: 60.0
+
+# Helicopter collision box dimensions.
+helicopter_width: 40.0
+helicopter_height: 20.0
+
+# Minimum vertical distance between consecutive helicopters.
+helicopter_min_spacing: 500.0
+
+# Score awarded for destroying a helicopter with a missile.
+helicopter_score: 10

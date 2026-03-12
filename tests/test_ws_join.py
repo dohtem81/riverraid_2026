@@ -1,3 +1,5 @@
+import random
+
 from riverraid.interfaces.ws.gateway import WebSocketGateway
 
 
@@ -526,7 +528,7 @@ def test_missile_destroys_bridge_and_adds_20_score():
         fuel_stations=[],
         bridges=bridges,
         plane_state=plane_state,
-        elapsed_seconds=0.2,
+        elapsed_seconds=0.09,  # Missile travels 27 units (300 * 0.09), from y=100 to y=127
     )
 
     assert missiles_after == []
@@ -686,3 +688,264 @@ def test_snapshot_payload_uses_level_parameter_for_hud():
     )
 
     assert snapshot["hud"]["level"] == 4
+
+
+def test_ensure_helicopters_until_spawns_helicopters():
+    random.seed(100)  # Use a seed that produces multiple helicopters
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    bridge_center = gateway._world_width / 2
+    river_banks = [
+        {
+            "y": float(i * gateway._segment_height),
+            "left_x": bridge_center - gateway._river_max_width / 2,
+            "right_x": bridge_center + gateway._river_max_width / 2,
+        }
+        for i in range(0, int(gateway._helicopter_min_spacing * 3) + 1, 1)
+    ]
+
+    helicopters, next_id, next_y = gateway._ensure_helicopters_until(
+        helicopters=[],
+        next_helicopter_id=1,
+        next_helicopter_y=0.0,
+        river_banks=river_banks,
+        target_y=gateway._helicopter_min_spacing * 3,  # Increase target to spawn more
+    )
+
+    assert len(helicopters) >= 2
+    assert next_id >= 3
+    for heli in helicopters:
+        assert heli["width"] == gateway._helicopter_width
+        assert heli["height"] == gateway._helicopter_height
+        assert heli["speed"] == gateway._helicopter_speed
+        assert heli["direction"] in [1, -1]
+
+
+def test_helicopters_alternate_spawn_sides():
+    random.seed(123)  # Use a different seed to get mixed directions
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    bridge_center = gateway._world_width / 2
+    river_banks = [
+        {
+            "y": float(i),
+            "left_x": bridge_center - gateway._river_max_width / 2,
+            "right_x": bridge_center + gateway._river_max_width / 2,
+        }
+        for i in range(0, int(gateway._helicopter_min_spacing * 4), 10)
+    ]
+
+    helicopters = []
+    next_id = 1
+    next_y = 0.0
+    for _ in range(4):
+        helicopters, next_id, next_y = gateway._ensure_helicopters_until(
+            helicopters=helicopters,
+            next_helicopter_id=next_id,
+            next_helicopter_y=next_y,
+            river_banks=river_banks,
+            target_y=next_y + gateway._helicopter_min_spacing,
+        )
+
+    # Check that we got multiple helicopters with different starting sides
+    directions = [h["direction"] for h in helicopters]
+    assert 1 in directions and -1 in directions
+
+
+def test_advance_helicopters_moves_side_to_side():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    heli = {
+        "id": "heli_1",
+        "x": 400.0,
+        "y": 100.0,
+        "width": gateway._helicopter_width,
+        "height": gateway._helicopter_height,
+        "speed": gateway._helicopter_speed,
+        "direction": 1,
+        "left_bound": 300.0,
+        "right_bound": 700.0,
+    }
+
+    gateway._advance_helicopters(helicopters=[heli], elapsed_seconds=0.1)
+
+    assert heli["x"] > 400.0
+    assert heli["direction"] == 1
+
+
+def test_helicopter_bounces_at_boundary():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    heli = {
+        "id": "heli_1",
+        "x": 695.0,
+        "y": 100.0,
+        "width": gateway._helicopter_width,
+        "height": gateway._helicopter_height,
+        "speed": gateway._helicopter_speed,
+        "direction": 1,
+        "left_bound": 300.0,
+        "right_bound": 700.0,
+    }
+
+    gateway._advance_helicopters(helicopters=[heli], elapsed_seconds=1.0)
+
+    assert heli["direction"] == -1
+    assert heli["x"] == 700.0
+
+
+def test_missile_destroys_helicopter_adds_10_score():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    plane_state = gateway._initial_plane_state()
+    plane_state["score"] = 0
+
+    missile = {
+        "id": "missile_1",
+        "x": 500.0,
+        "y": 100.0,
+        "width": gateway._missile_width,
+        "height": gateway._missile_height,
+    }
+    helicopters = [
+        {
+            "id": "heli_1",
+            "x": 500.0,
+            "y": 130.0,
+            "width": gateway._helicopter_width,
+            "height": gateway._helicopter_height,
+            "speed": 60.0,
+            "direction": 1,
+            "left_bound": 400.0,
+            "right_bound": 600.0,
+        }
+    ]
+
+    missiles_after = gateway._advance_missiles_and_check_collisions(
+        missiles=[missile],
+        fuel_stations=[],
+        bridges=[],
+        helicopters=helicopters,
+        plane_state=plane_state,
+        elapsed_seconds=0.09,  # Missile travels 27 units (300 * 0.09), from y=100 to y=127
+    )
+
+    assert len(missiles_after) == 0
+    assert len(helicopters) == 1
+    assert helicopters[0]["destroyed"] is True
+    assert plane_state["score"] == 10
+
+
+def test_plane_collision_with_helicopter_causes_damage():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    plane_state = gateway._initial_plane_state()
+    plane_state["x"] = 500.0
+    plane_state["y"] = 100.0
+    plane_state["hp"] = 3
+
+    helicopters = [
+        {
+            "id": "heli_1",
+            "x": 500.0,
+            "y": 90.0,
+            "width": gateway._helicopter_width,
+            "height": gateway._helicopter_height,
+            "speed": 60.0,
+            "direction": 1,
+            "left_bound": 400.0,
+            "right_bound": 600.0,
+        }
+    ]
+
+    event = gateway._handle_helicopter_collision(plane_state=plane_state, helicopters=helicopters)
+
+    assert event is not None
+    assert event["event_type"] == "collision_helicopter"
+    assert plane_state["hp"] == 2
+    assert helicopters[0]["destroyed"] is True
+
+
+def test_destroyed_helicopter_not_in_entities():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    helicopter = {
+        "id": "heli_1",
+        "x": 500.0,
+        "y": 100.0,
+        "width": gateway._helicopter_width,
+        "height": gateway._helicopter_height,
+        "speed": 60.0,
+        "direction": 1,
+        "left_bound": 400.0,
+        "right_bound": 600.0,
+        "destroyed": True,
+    }
+
+    entities = gateway._all_entities_in_view(
+        fuel_stations=[],
+        missiles=[],
+        bridges=[],
+        helicopters=[helicopter],
+        camera_y=0.0,
+    )
+
+    assert len(entities) == 0
+
+
+def test_helicopter_emitted_in_entities_when_in_view():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    helicopter = {
+        "id": "heli_1",
+        "x": 500.0,
+        "y": 100.0,
+        "width": gateway._helicopter_width,
+        "height": gateway._helicopter_height,
+        "speed": 60.0,
+        "direction": 1,
+        "left_bound": 400.0,
+        "right_bound": 600.0,
+    }
+
+    entities = gateway._all_entities_in_view(
+        fuel_stations=[],
+        missiles=[],
+        bridges=[],
+        helicopters=[helicopter],
+        camera_y=0.0,
+    )
+
+    assert len(entities) == 1
+    assert entities[0]["kind"] == "helicopter"
+    assert entities[0]["id"] == "heli_1"
+
+
+def test_prune_old_helicopters():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    helicopters = [
+        {
+            "id": "heli_1",
+            "x": 500.0,
+            "y": 50.0,
+            "width": gateway._helicopter_width,
+            "height": gateway._helicopter_height,
+            "speed": 60.0,
+            "direction": 1,
+            "left_bound": 400.0,
+            "right_bound": 600.0,
+        },
+        {
+            "id": "heli_2",
+            "x": 500.0,
+            "y": 2000.0,
+            "width": gateway._helicopter_width,
+            "height": gateway._helicopter_height,
+            "speed": 60.0,
+            "direction": -1,
+            "left_bound": 400.0,
+            "right_bound": 600.0,
+        },
+    ]
+
+    # Prune with camera at 500, should keep heli_2 (y=2000) but pruning checks min_y = camera_y - height
+    pruned = gateway._prune_old_helicopters(
+        helicopters=helicopters,
+        camera_y=1500.0,
+    )
+
+    assert len(pruned) == 1
+    assert pruned[0]["id"] == "heli_2"
+

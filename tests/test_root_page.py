@@ -6,5 +6,5 @@ def test_root_serves_render_page(client):
     assert "Lives:" in response.text
     assert "Score:" in response.text
     assert "Level:" in response.text
-    assert "Fuel:" in response.text
+    assert "fuel-gauge" in response.text
     assert "Restart" in response.text

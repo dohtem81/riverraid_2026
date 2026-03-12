@@ -2,6 +2,10 @@
 
 This folder contains project documentation for **RiverRaid** (2D single-player web game with realtime authoritative backend).
 
+## Demo
+
+<video src="./demo/recording-2026-03-12T04-05-59-348Z.webm" controls width="800"></video>
+
 ## Docs Index
 
 - [Game Vision](./game-vision.md)

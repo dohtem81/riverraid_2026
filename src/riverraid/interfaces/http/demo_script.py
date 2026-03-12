@@ -6,7 +6,7 @@ const restartBtn = document.getElementById('restart');
 const hudLivesEl = document.getElementById('hud-lives');
 const hudScoreEl = document.getElementById('hud-score');
 const hudLevelEl = document.getElementById('hud-level');
-const hudFuelEl = document.getElementById('hud-fuel');
+const hudFuelBarEl = document.getElementById('hud-fuel-bar');
 let worldWidth = 1000;
 let viewportHeight = 600;
 let plane = null;
@@ -39,13 +39,55 @@ function render() {
     }
 
     const p = worldToCanvas(plane.x, plane.y);
-    ctx.fillStyle = '#00d4ff';
+    ctx.save();
+    ctx.translate(p.x, p.y);
+
+    // Swept-back wings
+    ctx.fillStyle = '#d4b820';
     ctx.beginPath();
-    ctx.moveTo(p.x, p.y - 14);
-    ctx.lineTo(p.x - 10, p.y + 10);
-    ctx.lineTo(p.x + 10, p.y + 10);
+    ctx.moveTo(-4, 1);
+    ctx.lineTo(-16, 9);
+    ctx.lineTo(-11, 13);
+    ctx.lineTo(0, 9);
+    ctx.lineTo(11, 13);
+    ctx.lineTo(16, 9);
+    ctx.lineTo(4, 1);
     ctx.closePath();
     ctx.fill();
+
+    // Tail fins
+    ctx.beginPath();
+    ctx.moveTo(-2, 7);
+    ctx.lineTo(-8, 15);
+    ctx.lineTo(-2, 11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(2, 7);
+    ctx.lineTo(8, 15);
+    ctx.lineTo(2, 11);
+    ctx.closePath();
+    ctx.fill();
+
+    // Fuselage
+    ctx.fillStyle = '#f0d030';
+    ctx.beginPath();
+    ctx.moveTo(0, -16);
+    ctx.lineTo(4, -4);
+    ctx.lineTo(4, 7);
+    ctx.lineTo(0, 12);
+    ctx.lineTo(-4, 7);
+    ctx.lineTo(-4, -4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cockpit window
+    ctx.fillStyle = '#a0d8ef';
+    ctx.beginPath();
+    ctx.ellipse(0, -6, 2, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
 
     renderGameOverOverlay();
 
@@ -154,34 +196,72 @@ function renderEntities() {
             ctx.fillRect(mPos.x - mWidthPx / 2, mPos.y, mWidthPx, mHeightPx);
             continue;
         }
+        if (entity.kind === 'helicopter') {
+            const hscale = canvas.width / worldWidth;
+            const hpos = worldToCanvas(entity.x, entity.y);
+            ctx.save();
+            ctx.translate(hpos.x, hpos.y);
+            // Tail boom
+            ctx.fillStyle = '#3a7a2a';
+            ctx.fillRect(10, -2, 16, 4);
+            // Tail rotor
+            ctx.fillStyle = '#2a6a1a';
+            ctx.fillRect(24, -7, 3, 14);
+            // Body
+            ctx.fillStyle = '#4a8a3a';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 13, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Cockpit window
+            ctx.fillStyle = '#1a2e1a';
+            ctx.beginPath();
+            ctx.ellipse(-3, -1, 6, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Main rotor
+            ctx.strokeStyle = '#8ac870';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-20, -10);
+            ctx.lineTo(20, -10);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+            // Skids
+            ctx.fillStyle = '#6aaa5a';
+            ctx.fillRect(-11, 7, 22, 3);
+            ctx.restore();
+            continue;
+        }
+
         if (entity.kind !== 'fuel_station') {
             continue;
         }
 
-        const top = worldToCanvas(entity.x, entity.y + entity.height);
-        const bottom = worldToCanvas(entity.x, entity.y);
-        const stationHeightPx = Math.abs(bottom.y - top.y);
-
-        ctx.fillStyle = '#f0d84a';
-        ctx.fillRect(
-            top.x - 1,
-            Math.min(top.y, bottom.y),
-            2,
-            stationHeightPx
-        );
-
-        const letters = ['F', 'U', 'E', 'L'];
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 14px Arial';
-        ctx.textAlign = 'center';
-        for (let i = 0; i < letters.length; i += 1) {
-            const y = Math.min(top.y, bottom.y) + 14 + (i * 16);
-            if (y > Math.max(top.y, bottom.y) - 4) {
-                break;
+        {
+            const fscale = canvas.width / worldWidth;
+            const ftop = worldToCanvas(entity.x, entity.y + entity.height);
+            const stationH = entity.height * fscale;
+            const stationW = entity.width * fscale;
+            const fx = ftop.x - stationW / 2;
+            const fy = ftop.y;
+            const letters = ['F', 'U', 'E', 'L'];
+            const bgColors = ['#cc1111', '#eeeeee', '#cc1111', '#eeeeee'];
+            const fgColors = ['#ffffff', '#cc1111', '#ffffff', '#cc1111'];
+            const cellH = stationH / 4;
+            const fontSize = Math.max(8, Math.min(18, cellH * 0.72));
+            ctx.font = `bold ${fontSize}px Arial`;
+            ctx.textAlign = 'center';
+            for (let i = 0; i < 4; i += 1) {
+                const ly = fy + cellH * i;
+                ctx.fillStyle = bgColors[i];
+                ctx.fillRect(fx, ly, stationW, cellH);
+                ctx.fillStyle = fgColors[i];
+                ctx.fillText(letters[i], fx + stationW / 2, ly + cellH * 0.78);
             }
-            ctx.fillText(letters[i], top.x, y);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(fx, fy, stationW, stationH);
+            ctx.textAlign = 'start';
         }
-        ctx.textAlign = 'start';
     }
 }
 
@@ -199,8 +279,12 @@ function updateHud(hud) {
     if (typeof hud.level === 'number') {
         hudLevelEl.textContent = String(hud.level);
     }
-    if (typeof hud.fuel === 'number') {
-        hudFuelEl.textContent = String(hud.fuel);
+    if (typeof hud.fuel === 'number' && hudFuelBarEl) {
+        hudFuelBarEl.style.width = Math.max(0, Math.min(100, hud.fuel)) + '%';
+        const pct = hud.fuel / 100;
+        const r = Math.round(212 * pct + 100 * (1 - pct));
+        const g = Math.round(208 * pct + 20 * (1 - pct));
+        hudFuelBarEl.style.background = `rgb(${r},${g},20)`;
     }
 }
 
@@ -260,7 +344,7 @@ async function connect() {
                     restartBtn.disabled = true;
                     setStatus('Game restarted. Use Left/Right arrow keys to move, Space to fire.');
                 }
-                const crashEvents = ['collision_bank', 'collision_bridge', 'crash_fuel'];
+                const crashEvents = ['collision_bank', 'collision_bridge', 'crash_fuel', 'collision_helicopter'];
                 if (crashEvents.includes(msg.payload.event_type) && msg.payload.data) {
                     if (typeof msg.payload.data.respawn_camera_y === 'number') {
                         cameraY = msg.payload.data.respawn_camera_y;

@@ -28,8 +28,13 @@ class GameSessionService:
         missile_height: float,
         bridge_interval_y: float,
         bridge_height: float,
-        bridge_narrow_min: float,d
+        bridge_narrow_min: float,
         bridge_narrow_max: float,
+        helicopter_speed: float,
+        helicopter_width: float,
+        helicopter_height: float,
+        helicopter_min_spacing: float,
+        helicopter_score: int,
     ) -> None:
         self._world_width = world_width
         self._step_x = step_x
@@ -57,6 +62,11 @@ class GameSessionService:
         self._bridge_height = bridge_height
         self._bridge_narrow_min = bridge_narrow_min
         self._bridge_narrow_max = bridge_narrow_max
+        self._helicopter_speed = helicopter_speed
+        self._helicopter_width = helicopter_width
+        self._helicopter_height = helicopter_height
+        self._helicopter_min_spacing = helicopter_min_spacing
+        self._helicopter_score = helicopter_score
 
     def initial_plane_state(self) -> dict:
         return {
@@ -276,7 +286,8 @@ class GameSessionService:
         }
 
     def advance_missiles_and_check_collisions(
-        self, missiles: list[dict], fuel_stations: list[dict], bridges: list[dict], plane_state: dict, elapsed_seconds: float
+        self, missiles: list[dict], fuel_stations: list[dict], bridges: list[dict], plane_state: dict,
+        elapsed_seconds: float, helicopters: list[dict] | None = None,
     ) -> list[dict]:
         kept: list[dict] = []
         delta_y = self._missile_speed * elapsed_seconds
@@ -310,6 +321,19 @@ class GameSessionService:
                         plane_state["score"] = int(plane_state["score"]) + 20
                         hit = True
                         break
+            if not hit and helicopters:
+                for heli in helicopters:
+                    if heli.get("destroyed"):
+                        continue
+                    h_left = float(heli["x"]) - float(heli["width"]) / 2
+                    h_right = float(heli["x"]) + float(heli["width"]) / 2
+                    h_bottom = float(heli["y"])
+                    h_top = h_bottom + float(heli["height"])
+                    if m_right >= h_left and m_left <= h_right and m_top >= h_bottom and m_bottom <= h_top:
+                        heli["destroyed"] = True
+                        plane_state["score"] = int(plane_state["score"]) + self._helicopter_score
+                        hit = True
+                        break
             if not hit:
                 kept.append(missile)
         return kept
@@ -318,7 +342,10 @@ class GameSessionService:
         max_y = camera_y + self._viewport_height + self._river_generation_buffer
         return [m for m in missiles if m["y"] <= max_y]
 
-    def all_entities_in_view(self, fuel_stations: list[dict], missiles: list[dict], bridges: list[dict], camera_y: float) -> list[dict]:
+    def all_entities_in_view(
+        self, fuel_stations: list[dict], missiles: list[dict], bridges: list[dict],
+        camera_y: float, helicopters: list[dict] | None = None,
+    ) -> list[dict]:
         entities = self.fuel_station_entities_in_view(fuel_stations=fuel_stations, camera_y=camera_y)
         min_y = camera_y - self._missile_height
         max_y = camera_y + self._viewport_height + self._missile_height
@@ -350,6 +377,24 @@ class GameSessionService:
                         "height": bridge["height"],
                     }
                 )
+        if helicopters:
+            heli_margin = self._helicopter_height
+            heli_min_y = camera_y - heli_margin
+            heli_max_y = camera_y + self._viewport_height + heli_margin
+            for heli in helicopters:
+                if heli.get("destroyed"):
+                    continue
+                if heli["y"] + heli["height"] >= heli_min_y and heli["y"] <= heli_max_y:
+                    entities.append(
+                        {
+                            "id": heli["id"],
+                            "kind": "helicopter",
+                            "x": heli["x"],
+                            "y": heli["y"],
+                            "width": heli["width"],
+                            "height": heli["height"],
+                        }
+                    )
         return entities
 
     def ensure_bridges_until(
@@ -398,6 +443,93 @@ class GameSessionService:
                 plane_state["fuel"] = self._fuel_capacity if plane_state["hp"] > 0 else 0.0
                 return {
                     "event_type": "collision_bridge",
+                    "data": {
+                        "hp": plane_state["hp"],
+                        "fuel": int(plane_state["fuel"]),
+                    },
+                }
+        return None
+
+    def ensure_helicopters_until(
+        self,
+        helicopters: list[dict],
+        next_helicopter_id: int,
+        next_helicopter_y: float,
+        river_banks: list[dict],
+        target_y: float,
+    ) -> tuple[list[dict], int, float]:
+        while next_helicopter_y <= target_y:
+            heli_y = next_helicopter_y + random.uniform(
+                self._helicopter_min_spacing * 0.3,
+                self._helicopter_min_spacing,
+            )
+            if heli_y > target_y:
+                break
+            left_x, right_x = self.bank_bounds_at_y(river_banks=river_banks, y=heli_y)
+            river_width = right_x - left_x
+            if river_width < self._helicopter_width * 2:
+                next_helicopter_y = heli_y + self._helicopter_min_spacing
+                continue
+            half_w = self._helicopter_width / 2
+            left_bound = left_x + half_w
+            right_bound = right_x - half_w
+            side = random.choice(["left", "right"])
+            start_x = left_bound if side == "left" else right_bound
+            direction = 1 if side == "left" else -1
+            helicopters.append(
+                {
+                    "id": f"heli_{next_helicopter_id}",
+                    "x": round(start_x, 2),
+                    "y": round(heli_y, 2),
+                    "width": self._helicopter_width,
+                    "height": self._helicopter_height,
+                    "speed": self._helicopter_speed,
+                    "direction": direction,
+                    "left_bound": round(left_bound, 2),
+                    "right_bound": round(right_bound, 2),
+                }
+            )
+            next_helicopter_id += 1
+            next_helicopter_y = heli_y + self._helicopter_min_spacing
+        return helicopters, next_helicopter_id, next_helicopter_y
+
+    @staticmethod
+    def advance_helicopters(helicopters: list[dict], elapsed_seconds: float) -> None:
+        """Move each helicopter laterally, bouncing between its left/right bounds."""
+        for heli in helicopters:
+            if heli.get("destroyed"):
+                continue
+            speed = heli.get("speed", 60.0)
+            heli["x"] += speed * heli["direction"] * elapsed_seconds
+            if heli["x"] >= heli["right_bound"]:
+                heli["x"] = heli["right_bound"]
+                heli["direction"] = -1
+            elif heli["x"] <= heli["left_bound"]:
+                heli["x"] = heli["left_bound"]
+                heli["direction"] = 1
+
+    def prune_old_helicopters(self, helicopters: list[dict], camera_y: float) -> list[dict]:
+        min_y = camera_y - self._helicopter_height
+        return [h for h in helicopters if h["y"] + h["height"] >= min_y]
+
+    def handle_helicopter_collision(self, plane_state: dict, helicopters: list[dict]) -> dict | None:
+        plane_x = float(plane_state["x"])
+        plane_y = float(plane_state["y"])
+        for heli in helicopters:
+            if heli.get("destroyed"):
+                continue
+            h_left = float(heli["x"]) - float(heli["width"]) / 2
+            h_right = float(heli["x"]) + float(heli["width"]) / 2
+            h_bottom = float(heli["y"])
+            h_top = h_bottom + float(heli["height"])
+            x_hit = (plane_x + self._plane_half_width) >= h_left and (plane_x - self._plane_half_width) <= h_right
+            if x_hit and h_bottom <= plane_y <= h_top:
+                heli["destroyed"] = True
+                plane_state["hp"] = max(0, int(plane_state["hp"]) - 1)
+                plane_state["x"] = self._world_width / 2
+                plane_state["fuel"] = self._fuel_capacity if plane_state["hp"] > 0 else 0.0
+                return {
+                    "event_type": "collision_helicopter",
                     "data": {
                         "hp": plane_state["hp"],
                         "fuel": int(plane_state["fuel"]),

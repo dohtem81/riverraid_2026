@@ -26,7 +26,14 @@ INDEX_HTML = f"""
             <div class="hud-item"><strong>Lives:</strong><span id="hud-lives">3</span></div>
             <div class="hud-item"><strong>Score:</strong><span id="hud-score">0</span></div>
             <div class="hud-item"><strong>Level:</strong><span id="hud-level">1</span></div>
-            <div class="hud-item"><strong>Fuel:</strong><span id="hud-fuel">100</span></div>
+            <div class="hud-fuel-gauge">
+                <span class="fuel-gauge-lbl">E</span>
+                <div class="fuel-gauge-track">
+                    <div class="fuel-gauge-fill" id="hud-fuel-bar" style="width:100%"></div>
+                    <div class="fuel-gauge-tick"></div>
+                </div>
+                <span class="fuel-gauge-lbl">F</span>
+            </div>
         </div>
     </div>
     <script>{DEMO_SCRIPT}</script>
