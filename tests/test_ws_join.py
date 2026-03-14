@@ -224,6 +224,138 @@ def test_ws_input_without_input_seq_is_accepted(client):
         assert event["payload"]["data"]["input_seq"] == 9
 
 
+def test_ws_keydown_hold_then_keyup_stops_movement(client):
+    token = _login(client)
+
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"type": "join", "seq": 1, "payload": {"access_token": token}})
+        _receive_until_type(websocket, "join_ack")
+        initial_snapshot = _receive_until_type(websocket, "snapshot")
+        initial_x = initial_snapshot["payload"]["player"]["x"]
+
+        websocket.send_json(
+            {
+                "type": "keydown",
+                "seq": 2,
+                "payload": {
+                    "key": "ArrowLeft",
+                },
+            }
+        )
+        keydown_event = _receive_until_type(websocket, "event")
+        assert keydown_event["payload"]["event_type"] == "input_accepted"
+        assert keydown_event["payload"]["data"]["key_event"] == "keydown"
+        assert keydown_event["payload"]["data"]["key"] == "left"
+
+        moved_left = False
+        last_x = initial_x
+        for _ in range(12):
+            snapshot = _receive_until_type(websocket, "snapshot")
+            x = snapshot["payload"]["player"]["x"]
+            if x < initial_x:
+                moved_left = True
+            last_x = x
+
+        assert moved_left
+
+        websocket.send_json(
+            {
+                "type": "keyup",
+                "seq": 3,
+                "payload": {
+                    "key": "ArrowLeft",
+                },
+            }
+        )
+        keyup_event = _receive_until_type(websocket, "event")
+        assert keyup_event["payload"]["event_type"] == "input_accepted"
+        assert keyup_event["payload"]["data"]["key_event"] == "keyup"
+        assert keyup_event["payload"]["data"]["key"] == "left"
+
+        # Capture the first snapshot AFTER keyup was confirmed processed — that's
+        # the stable reference position (an in-flight tick may have moved slightly).
+        stable_snapshot = _receive_until_type(websocket, "snapshot")
+        stable_x = stable_snapshot["payload"]["player"]["x"]
+        for _ in range(3):
+            snapshot = _receive_until_type(websocket, "snapshot")
+            assert snapshot["payload"]["player"]["x"] == stable_x
+
+
+def test_ws_keydown_rejects_invalid_key(client):
+    token = _login(client)
+
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_json({"type": "join", "seq": 1, "payload": {"access_token": token}})
+        _receive_until_type(websocket, "join_ack")
+        _receive_until_type(websocket, "snapshot")
+
+        websocket.send_json(
+            {
+                "type": "keydown",
+                "seq": 2,
+                "payload": {
+                    "key": "A",
+                },
+            }
+        )
+        error = _receive_until_type(websocket, "error")
+        assert error["payload"]["code"] == "INVALID_INPUT"
+
+
+def test_missile_cooldown_prevents_rapid_fire():
+    from riverraid.application.session_runtime import SessionRuntime
+    from riverraid.application.session_entities import Plane
+
+    runtime = SessionRuntime()
+    g = runtime.new_state()
+    g.plane_state = Plane.from_dict(runtime._initial_plane_state())
+
+    fire_input = {"input_seq": 1, "turn": None, "fast": False, "fire": True}
+
+    # First shot at t=0 should succeed
+    g.game_time = 0.0
+    g.last_fired_time = -999.0
+    runtime.process_input(g, {**fire_input, "input_seq": 1})
+    assert len(g.missiles) == 1
+
+    # Second shot at t=0.1 (within cooldown) must be suppressed
+    g.game_time = 0.1
+    runtime.process_input(g, {**fire_input, "input_seq": 2})
+    assert len(g.missiles) == 1
+
+    # Shot at exactly the cooldown boundary must succeed
+    g.game_time = g.last_fired_time + runtime._missile_cooldown_seconds
+    runtime.process_input(g, {**fire_input, "input_seq": 3})
+    assert len(g.missiles) == 2
+
+
+def test_missile_expires_after_lifetime():
+    from riverraid.application.session_runtime import SessionRuntime
+    from riverraid.application.session_entities import Missile, Plane
+
+    runtime = SessionRuntime()
+    g = runtime.new_state()
+    g.plane_state = Plane.from_dict(runtime._initial_plane_state())
+
+    # Fire at t=0
+    g.game_time = 0.0
+    g.last_fired_time = -999.0
+    fire_input = {"input_seq": 1, "turn": None, "fast": False, "fire": True}
+    runtime.process_input(g, fire_input)
+    assert len(g.missiles) == 1
+    fired_at = g.missiles[0].fired_at
+
+    # Just before lifetime ends: missile must still exist
+    g.game_time = fired_at + runtime._missile_lifetime_seconds - 0.01
+    g.missiles = [m for m in g.missiles if g.game_time - m.fired_at <= runtime._missile_lifetime_seconds]
+    assert len(g.missiles) == 1
+
+    # Just after lifetime ends: missile must be gone
+    g.game_time = fired_at + runtime._missile_lifetime_seconds + 0.01
+    g.missiles = [m for m in g.missiles if g.game_time - m.fired_at <= runtime._missile_lifetime_seconds]
+    assert len(g.missiles) == 0
+
+
 def test_ws_scrolls_without_input(client):
     token = _login(client)
 
@@ -948,4 +1080,140 @@ def test_prune_old_helicopters():
 
     assert len(pruned) == 1
     assert pruned[0]["id"] == "heli_2"
+
+
+# ── Tank tests ────────────────────────────────────────────────────────────────
+
+def test_tank_missile_hits_plane():
+    from riverraid.application.game_session_service import GameSessionService
+    from riverraid.infrastructure.game_config import load_game_config
+
+    cfg = load_game_config()
+    service = GameSessionService(cfg=cfg)
+    plane_state = service.initial_plane_state()
+    hp_before = plane_state["hp"]
+
+    # Place a tank missile directly overlapping the plane
+    tank_missiles = [{
+        "id": "tank_missile_1",
+        "x": plane_state["x"],
+        "y": plane_state["y"],
+        "width": cfg.tank_missile_width,
+        "height": cfg.tank_missile_height,
+        "vx": cfg.tank_missile_speed_x,
+        "fired_at": 0.0,
+    }]
+
+    event = service.handle_tank_missile_collision(plane_state=plane_state, tank_missiles=tank_missiles)
+
+    assert event is not None
+    assert event["event_type"] == "collision_tank_missile"
+    assert plane_state["hp"] == hp_before - 1
+    assert len(tank_missiles) == 0  # consumed missile
+
+
+def test_tank_missile_misses_plane():
+    from riverraid.application.game_session_service import GameSessionService
+    from riverraid.infrastructure.game_config import load_game_config
+
+    cfg = load_game_config()
+    service = GameSessionService(cfg=cfg)
+    plane_state = service.initial_plane_state()
+
+    # Place a tank missile far to the side — no overlap
+    tank_missiles = [{
+        "id": "tank_missile_1",
+        "x": 0.0,
+        "y": plane_state["y"] + 500.0,
+        "width": cfg.tank_missile_width,
+        "height": cfg.tank_missile_height,
+        "vx": cfg.tank_missile_speed_x,
+        "fired_at": 0.0,
+    }]
+
+    event = service.handle_tank_missile_collision(plane_state=plane_state, tank_missiles=tank_missiles)
+
+    assert event is None
+    assert len(tank_missiles) == 1  # missile not consumed
+
+
+def test_player_missile_destroys_tank():
+    from riverraid.application.game_session_service import GameSessionService
+    from riverraid.infrastructure.game_config import load_game_config
+
+    cfg = load_game_config()
+    service = GameSessionService(cfg=cfg)
+    plane_state = service.initial_plane_state()
+    plane_state["score"] = 0
+
+    tank = {
+        "id": "tank_1",
+        "x": 500.0,
+        "y": 300.0,
+        "width": cfg.tank_width,
+        "height": cfg.tank_height,
+        "side": "right",
+        "last_shot_at": 0.0,
+        "destroyed": False,
+    }
+    # Missile starts just below the tank and travels upward
+    missile = {
+        "id": "missile_1",
+        "x": 500.0,
+        "y": 295.0,
+        "width": cfg.missile_width,
+        "height": cfg.missile_height,
+        "vx": 0.0,
+        "fired_at": 0.0,
+    }
+
+    tanks = [tank]
+    missiles_after = service.advance_missiles_and_check_collisions(
+        missiles=[missile],
+        fuel_stations=[],
+        bridges=[],
+        helicopters=[],
+        tanks=tanks,
+        plane_state=plane_state,
+        elapsed_seconds=0.02,  # missile travels 6 units — overlaps the tank at y=300
+    )
+
+    assert tanks[0]["destroyed"] is True
+    assert plane_state["score"] == cfg.tank_score
+    assert missiles_after == []  # missile consumed
+
+
+def test_tank_fires_after_interval():
+    from riverraid.application.game_session_service import GameSessionService
+    from riverraid.infrastructure.game_config import load_game_config
+
+    cfg = load_game_config()
+    service = GameSessionService(cfg=cfg)
+
+    tank = {
+        "id": "tank_1",
+        "x": 50.0,
+        "y": 200.0,
+        "width": cfg.tank_width,
+        "height": cfg.tank_height,
+        "side": "left",
+        "last_shot_at": -(cfg.tank_shoot_interval_seconds),
+        "destroyed": False,
+    }
+
+    # First call — tank is ready to fire
+    new_missiles, next_id = service.maybe_fire_from_tanks(tanks=[tank], game_time=0.0, next_tank_missile_id=1)
+    assert len(new_missiles) == 1
+    assert new_missiles[0]["vx"] == cfg.tank_missile_speed_x  # fires to the right (left-bank tank)
+    assert next_id == 2
+
+    # Immediate second call — cooldown not elapsed
+    new_missiles2, _ = service.maybe_fire_from_tanks(tanks=[tank], game_time=0.0, next_tank_missile_id=2)
+    assert len(new_missiles2) == 0
+
+    # After the interval — fires again
+    new_missiles3, _ = service.maybe_fire_from_tanks(
+        tanks=[tank], game_time=cfg.tank_shoot_interval_seconds, next_tank_missile_id=2
+    )
+    assert len(new_missiles3) == 1
 

@@ -17,6 +17,7 @@ let ws = null;
 let inputSeq = 0;
 let isGameOver = false;
 let lastFireTime = 0;
+const pressedKeys = new Set();
 
 restartBtn.disabled = true;
 
@@ -232,6 +233,40 @@ function renderEntities() {
             continue;
         }
 
+        if (entity.kind === 'tank') {
+            const tscale = canvas.width / worldWidth;
+            const tpos = worldToCanvas(entity.x, entity.y);
+            const tw = Math.max(6, entity.width * tscale);
+            const th = Math.max(4, entity.height * tscale);
+            ctx.save();
+            ctx.translate(tpos.x, tpos.y);
+            // Hull
+            ctx.fillStyle = '#222222';
+            ctx.fillRect(-tw / 2, -th, tw, th);
+            // Turret
+            const turretW = tw * 0.45;
+            const turretH = th * 0.55;
+            ctx.fillStyle = '#111111';
+            ctx.fillRect(-turretW / 2, -th - turretH * 0.6, turretW, turretH);
+            // Gun barrel pointing inward (toward river)
+            const barrelLen = tw * 0.55;
+            const barrelDir = entity.side === 'left' ? 1 : -1;
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(barrelDir > 0 ? 0 : -barrelLen, -th - turretH * 0.2, barrelLen, th * 0.2);
+            ctx.restore();
+            continue;
+        }
+
+        if (entity.kind === 'tank_missile') {
+            const scale = canvas.width / worldWidth;
+            const mpos = worldToCanvas(entity.x, entity.y + entity.height / 2);
+            const mw = Math.max(4, entity.width * scale);
+            const mh = Math.max(2, entity.height * scale);
+            ctx.fillStyle = '#ff8800';
+            ctx.fillRect(mpos.x - mw / 2, mpos.y - mh / 2, mw, mh);
+            continue;
+        }
+
         if (entity.kind !== 'fuel_station') {
             continue;
         }
@@ -377,17 +412,17 @@ async function connect() {
     }
 }
 
-function sendTurnInput(turn) {
+function sendKeyEvent(type, key) {
     if (!ws || ws.readyState !== WebSocket.OPEN || isGameOver) {
         return;
     }
 
     inputSeq += 1;
     ws.send(JSON.stringify({
-        type: 'input',
+        type,
         seq: inputSeq + 1,
         payload: {
-            turn,
+            key,
         }
     }));
 }
@@ -427,17 +462,24 @@ function sendRestart() {
 }
 
 window.addEventListener('keydown', (event) => {
-    if (event.key === 'ArrowLeft') {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === ' ') {
         event.preventDefault();
-        sendTurnInput('left');
+        if (pressedKeys.has(event.key)) {
+            return;
+        }
+        pressedKeys.add(event.key);
+        sendKeyEvent('keydown', event.key === ' ' ? 'Space' : event.key);
+        if (event.key === ' ') {
+            sendFire();
+        }
     }
-    if (event.key === 'ArrowRight') {
+});
+
+window.addEventListener('keyup', (event) => {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === ' ') {
         event.preventDefault();
-        sendTurnInput('right');
-    }
-    if (event.key === ' ') {
-        event.preventDefault();
-        sendFire();
+        pressedKeys.delete(event.key);
+        sendKeyEvent('keyup', event.key === ' ' ? 'Space' : event.key);
     }
 });
 

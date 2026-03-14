@@ -4,7 +4,10 @@
 
 - Runtime is a single FastAPI service.
 - Auth is config-based (single configured dev user) with JWT issuance/validation.
-- Realtime gameplay runs in-process in the WebSocket gateway and game session service.
+- Realtime gameplay is split across two Clean Architecture layers:
+  - **`SessionRuntime`** (application layer): owns all game-tick orchestration — world generation, entity advancement, collision resolution, key-state movement, missile/tank logic.
+  - **`WebSocketGateway`** (interface adapter): thin transport delegate — decodes/validates WS messages, calls `SessionRuntime`, encodes responses.
+- Input uses a key-state model (`keydown`/`keyup`): the server holds a `keys_down` set per session and applies continuous movement each tick without OS key-repeat delay.
 - No PostgreSQL or Redis integration is implemented yet.
 
 ## High-Level
@@ -66,8 +69,11 @@ Architecture fitness checks:
 
 - Tick rate: **30 TPS** (fixed timestep).
 - Snapshot broadcast: **~10 Hz** (plus immediate snapshots after accepted input events).
-- Client sends **input-only commands** (`turn`, `fast`, `fire`) with increasing `input_seq`.
+- Client sends **key-state commands** (`keydown`/`keyup`) or legacy `input` commands.
+- Server maintains a `keys_down` set per session; movement is applied continuously each tick at `step_x / tick_interval_seconds` game-units/s.
 - Server applies validated inputs at tick boundaries and returns snapshots with `last_processed_input_seq` for reconciliation.
+- Player missiles: travel upward at `missile_speed`; lifetime `2 s`; cooldown `0.5 s`.
+- Tank missiles: travel horizontally at `tank_missile_speed_x`; fired every `2 s` per tank; pruned on world-edge exit.
 
 ## Backend Responsibilities
 

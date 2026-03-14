@@ -49,7 +49,7 @@ Sent after socket open.
 
 ### `input`
 
-Primary gameplay input command.
+Legacy typed-input command (still accepted). Prefer `keydown`/`keyup` for smooth movement.
 
 ```json
 {
@@ -73,6 +73,42 @@ Input rules:
 - `fire` is optional boolean (`false` when omitted).
 - Server rejects invalid input payloads with `error.code=INVALID_INPUT`.
 - On accepted input, server emits `event:event_type=input_accepted` and then a `snapshot`.
+
+### `keydown`
+
+Key-press event. Server records the key in an active set and applies continuous movement each tick while the key is held. Preferred over `input` for smooth movement (avoids OS key-repeat pause).
+
+```json
+{
+	"type": "keydown",
+	"seq": 3,
+	"payload": {
+		"key": "ArrowLeft"
+	}
+}
+```
+
+Accepted key values: `ArrowLeft`, `ArrowRight`, `ArrowUp`, `ArrowDown`, `Space` (also `Spacebar`, `" "`). Server normalises to `left`, `right`, `up`, `down`, `space`.
+
+- `Space`/`Spacebar` fires a missile (subject to `missile_cooldown_seconds`).
+- Unknown keys are rejected with `error.code=INVALID_INPUT`.
+- Server emits `event:event_type=input_accepted` with `key_event=keydown` and `key=<normalised>`.
+
+### `keyup`
+
+Key-release event. Server removes the key from the active set so movement stops.
+
+```json
+{
+	"type": "keyup",
+	"seq": 4,
+	"payload": {
+		"key": "ArrowLeft"
+	}
+}
+```
+
+Same key validation as `keydown`. Emits `event:event_type=input_accepted` with `key_event=keyup`.
 
 ### `ping`
 
@@ -174,6 +210,49 @@ Authoritative state snapshot.
 				"width": 16.0,
 				"height": 240.0,
 				"label": "FUEL"
+			},
+			{
+				"id": "missile_3",
+				"kind": "missile",
+				"x": 500.0,
+				"y": 520.0,
+				"width": 4.0,
+				"height": 12.0
+			},
+			{
+				"id": "bridge_2",
+				"kind": "bridge",
+				"x": 500.0,
+				"y": 800.0,
+				"left_x": 300.0,
+				"right_x": 700.0,
+				"width": 400.0,
+				"height": 20.0
+			},
+			{
+				"id": "heli_1",
+				"kind": "helicopter",
+				"x": 450.0,
+				"y": 680.0,
+				"width": 40.0,
+				"height": 20.0
+			},
+			{
+				"id": "tank_1",
+				"kind": "tank",
+				"x": 240.0,
+				"y": 750.0,
+				"width": 20.0,
+				"height": 14.0,
+				"side": "left"
+			},
+			{
+				"id": "tank_missile_2",
+				"kind": "tank_missile",
+				"x": 265.0,
+				"y": 757.0,
+				"width": 10.0,
+				"height": 4.0
 			}
 		]
 	}
@@ -203,11 +282,14 @@ Discrete game event.
 ```
 
 Additional events used in current Phase 0:
-- `collision_bank` - plane touched bank, lives reduced.
-- `collision_bridge` - plane touched bridge, lives reduced.
-- `crash_fuel` - fuel reached 0, life reduced and crash applied.
-- `game_over` - lives reached 0, gameplay simulation paused.
-- `game_restarted` - restart accepted, state reset.
+- `input_accepted` — input or key event was processed; `data` contains echo of the command.
+- `collision_bank` — plane touched a river bank; lives reduced.
+- `collision_bridge` — plane touched a bridge; lives reduced.
+- `collision_helicopter` — plane collided with a helicopter; lives reduced.
+- `collision_tank_missile` — a tank missile hit the plane; lives reduced.
+- `crash_fuel` — fuel reached 0; life reduced and crash applied.
+- `game_over` — lives reached 0; gameplay simulation paused.
+- `game_restarted` — restart accepted; state reset.
 
 ### `pong`
 
@@ -270,6 +352,25 @@ When plane intersects river bank bounds, server emits:
 }
 ```
 
+Same structure for `collision_bridge`, `collision_helicopter`, and `collision_tank_missile`.
+All collision events include `data.hp` (remaining lives) and, on fatal hits, `data.respawn_camera_y`.
+
+## Missile Rules
+
+- **Player missiles** travel upward at `missile_speed` game-units/second (config default: `300`).
+- **Lifetime:** missiles are removed after `missile_lifetime_seconds` (default: `2.0 s`).
+- **Cooldown:** minimum `missile_cooldown_seconds` between shots (default: `0.5 s`).
+- Fire is triggered by a `keydown` with `key=Space`.
+- Player missiles destroy fuel stations (+10 score), bridges (+20 score), helicopters (+10 score), and tanks (+30 score).
+
+## Tank Behaviour
+
+- Tanks spawn on the river bank edge (left or right side) at random intervals.
+- Every `tank_shoot_interval_seconds` (default: `2.0 s`) a tank fires a horizontal missile across the river.
+- Left-bank tanks fire right; right-bank tanks fire left.
+- Tank missiles travel at `tank_missile_speed_x` (default: `200` game-units/s) and are pruned when they exit world bounds.
+- A player missile that overlaps a tank destroys it and awards `tank_score` (default: +30) points.
+
 ## Game Over Behavior
 
 - Start lives: `3`.
@@ -278,7 +379,7 @@ When plane intersects river bank bounds, server emits:
 - Fuel stations spawn randomly within river bounds with minimum spacing of 8 seconds of flight.
 - Fuel station dimensions: width equals plane width, height only tall enough to cover the vertical `FUEL` letters.
 - At fuel `0`, server triggers a crash (`crash_fuel`) and subtracts one life.
-- Each bank or bridge collision subtracts `1` life.
+- Each bank, bridge, helicopter collision, or tank missile hit subtracts `1` life.
 - At `0` lives, server emits `game_over` and ignores movement input (`error.code=GAME_OVER`).
 - Client can send `restart` command; server resets state and emits `game_restarted` plus fresh snapshot.
 

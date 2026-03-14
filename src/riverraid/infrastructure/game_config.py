@@ -44,6 +44,8 @@ class GameConfig:
     missile_speed: float
     missile_width: float
     missile_height: float
+    missile_lifetime_seconds: float
+    missile_cooldown_seconds: float
 
     # ── Bridges ───────────────────────────────────────────────────────────────
     bridge_height: float
@@ -54,7 +56,15 @@ class GameConfig:
     helicopter_height: float
     helicopter_min_spacing: float
     helicopter_score: int
-
+    # ── Tanks ─────────────────────────────────────────────────────────────────
+    tank_width: float
+    tank_height: float
+    tank_shoot_interval_seconds: float
+    tank_missile_speed_x: float
+    tank_missile_width: float
+    tank_missile_height: float
+    tank_min_spacing: float
+    tank_score: int
     # ── Derived (computed from the values above) ──────────────────────────────
     plane_width: float           # = plane_half_width * 2
     river_min_width: float       # = plane_width * 9
@@ -111,6 +121,8 @@ def load_game_config(path: Path | None = None) -> GameConfig:
         missile_speed=float(raw["missile_speed"]),
         missile_width=float(raw["missile_width"]),
         missile_height=float(raw["missile_height"]),
+        missile_lifetime_seconds=float(raw["missile_lifetime_seconds"]),
+        missile_cooldown_seconds=float(raw["missile_cooldown_seconds"]),
         # Bridges
         bridge_height=float(raw["bridge_height"]),
         # Helicopters
@@ -119,6 +131,15 @@ def load_game_config(path: Path | None = None) -> GameConfig:
         helicopter_height=float(raw["helicopter_height"]),
         helicopter_min_spacing=float(raw["helicopter_min_spacing"]),
         helicopter_score=int(raw["helicopter_score"]),
+        # Tanks
+        tank_width=float(raw["tank_width"]),
+        tank_height=float(raw["tank_height"]),
+        tank_shoot_interval_seconds=float(raw["tank_shoot_interval_seconds"]),
+        tank_missile_speed_x=float(raw["tank_missile_speed_x"]),
+        tank_missile_width=float(raw["tank_missile_width"]),
+        tank_missile_height=float(raw["tank_missile_height"]),
+        tank_min_spacing=float(raw["tank_min_spacing"]),
+        tank_score=int(raw["tank_score"]),
         # Derived
         plane_width=plane_width,
         river_min_width=plane_width * 9.0,

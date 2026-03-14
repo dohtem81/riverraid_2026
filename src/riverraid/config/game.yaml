@@ -60,7 +60,7 @@ plane_offset_from_camera: 60.0
 # ── Fuel ─────────────────────────────────────────────────────────────────────
 
 # Fuel consumed per second while flying.
-fuel_burn_per_second: 1.0
+fuel_burn_per_second: 2.0
 
 # Maximum fuel the tank can hold (shown as 100 % on the gauge).
 fuel_capacity: 100.0
@@ -84,6 +84,12 @@ missile_width: 4.0
 
 # Missile collision box height.
 missile_height: 12.0
+
+# How long (in seconds) a missile stays alive before being automatically removed.
+missile_lifetime_seconds: 2.0
+
+# Minimum time (in seconds) between consecutive missile shots.
+missile_cooldown_seconds: 0.5
 
 # ── Bridges ──────────────────────────────────────────────────────────────────
 
@@ -109,7 +115,29 @@ helicopter_width: 40.0
 helicopter_height: 20.0
 
 # Minimum vertical distance between consecutive helicopters.
-helicopter_min_spacing: 500.0
+helicopter_min_spacing: 250.0
 
 # Score awarded for destroying a helicopter with a missile.
 helicopter_score: 10
+
+# ── Tanks ───────────────────────────────────────────────────────────────
+
+# Tank collision box dimensions (sits on the river bank, facing inward).
+tank_width: 20.0
+tank_height: 14.0
+
+# How often (seconds) a tank fires a horizontal missile.
+tank_shoot_interval_seconds: 2.0
+
+# Horizontal speed (game-units/s) of a tank missile crossing the screen.
+tank_missile_speed_x: 200.0
+
+# Tank missile collision box dimensions.
+tank_missile_width: 10.0
+tank_missile_height: 4.0
+
+# Minimum vertical spacing between consecutive tanks.
+tank_min_spacing: 500.0
+
+# Score awarded for destroying a tank with a player missile.
+tank_score: 30

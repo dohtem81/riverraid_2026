@@ -1,7 +1,9 @@
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse, JSONResponse
 
+from riverraid.application.session_runtime import SessionRuntime
 from riverraid.application.use_cases import LoginWithConfiguredCredentials, ValidateJoinToken
+from riverraid.infrastructure.game_config import load_game_config
 from riverraid.infrastructure.config_credential_provider import ConfigCredentialProvider
 from riverraid.infrastructure.jwt_token_service import JwtTokenService
 from riverraid.infrastructure.settings import load_settings
@@ -22,7 +24,9 @@ def create_app() -> FastAPI:
         token_ttl_seconds=settings.access_token_ttl_seconds,
     )
     validate_join = ValidateJoinToken(token_service=token_service)
-    ws_gateway = WebSocketGateway(validate_join_token=validate_join)
+    game_cfg = load_game_config()
+    runtime = SessionRuntime(cfg=game_cfg)
+    ws_gateway = WebSocketGateway(validate_join_token=validate_join, runtime=runtime)
 
     app = FastAPI(title="RiverRaid Backend", version="0.1.0")
 

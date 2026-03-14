@@ -209,7 +209,7 @@ class GameSessionService:
 
     def advance_missiles_and_check_collisions(
         self, missiles: list[dict], fuel_stations: list[dict], bridges: list[dict], plane_state: dict,
-        elapsed_seconds: float, helicopters: list[dict] | None = None,
+        elapsed_seconds: float, helicopters: list[dict] | None = None, tanks: list[dict] | None = None,
     ) -> list[dict]:
         c = self._cfg
         kept: list[dict] = []
@@ -249,6 +249,17 @@ class GameSessionService:
                         plane_state["score"] = int(plane_state["score"]) + c.helicopter_score
                         hit = True
                         break
+            if not hit and tanks:
+                for tank in tanks:
+                    if tank.get("destroyed"):
+                        continue
+                    t_left = float(tank["x"]) - float(tank["width"]) / 2
+                    t_right = float(tank["x"]) + float(tank["width"]) / 2
+                    if self._aabb_overlap(m_left, m_right, m_bottom, m_top, t_left, t_right, float(tank["y"]), float(tank["y"]) + float(tank["height"])):
+                        tank["destroyed"] = True
+                        plane_state["score"] = int(plane_state["score"]) + c.tank_score
+                        hit = True
+                        break
             if not hit:
                 kept.append(missile)
         return kept
@@ -261,6 +272,7 @@ class GameSessionService:
     def all_entities_in_view(
         self, fuel_stations: list[dict], missiles: list[dict], bridges: list[dict],
         camera_y: float, helicopters: list[dict] | None = None,
+        tanks: list[dict] | None = None, tank_missiles: list[dict] | None = None,
     ) -> list[dict]:
         c = self._cfg
         entities = self.fuel_station_entities_in_view(fuel_stations=fuel_stations, camera_y=camera_y)
@@ -278,6 +290,14 @@ class GameSessionService:
             for heli in helicopters:
                 if not heli.get("destroyed") and heli["y"] + heli["height"] >= heli_min_y and heli["y"] <= heli_max_y:
                     entities.append({"id": heli["id"], "kind": "helicopter", "x": heli["x"], "y": heli["y"], "width": heli["width"], "height": heli["height"]})
+        if tanks:
+            for tank in tanks:
+                if not tank.get("destroyed") and tank["y"] + tank["height"] >= camera_y - c.tank_height and tank["y"] <= camera_y + c.viewport_height + c.tank_height:
+                    entities.append({"id": tank["id"], "kind": "tank", "x": tank["x"], "y": tank["y"], "width": tank["width"], "height": tank["height"], "side": tank["side"]})
+        if tank_missiles:
+            for tm in tank_missiles:
+                if (camera_y - c.tank_missile_height) <= tm["y"] <= (camera_y + c.viewport_height + c.tank_missile_height):
+                    entities.append({"id": tm["id"], "kind": "tank_missile", "x": tm["x"], "y": tm["y"], "width": tm["width"], "height": tm["height"]})
         return entities
 
     def ensure_bridges_until(
@@ -398,6 +418,106 @@ class GameSessionService:
     def bank_bounds_at_y(river_banks: list[dict], y: float) -> tuple[float, float]:
         if not river_banks:
             return (0.0, 1000.0)
+        nearest_segment = min(river_banks, key=lambda segment: abs(segment["y"] - y))
+        return float(nearest_segment["left_x"]), float(nearest_segment["right_x"])
+
+    # ── Tanks ──────────────────────────────────────────────────────────────
+
+    def ensure_tanks_until(
+        self,
+        tanks: list[dict],
+        next_tank_id: int,
+        next_tank_y: float,
+        river_banks: list[dict],
+        target_y: float,
+    ) -> tuple[list[dict], int, float]:
+        c = self._cfg
+        while next_tank_y <= target_y:
+            tank_y = next_tank_y + random.uniform(c.tank_min_spacing * 0.5, c.tank_min_spacing)
+            if tank_y > target_y:
+                break
+            left_x, right_x = self.bank_bounds_at_y(river_banks=river_banks, y=tank_y)
+            side = random.choice(["left", "right"])
+            # Place tank flush against the bank, facing inward
+            if side == "left":
+                tank_x = left_x - c.tank_width / 2
+            else:
+                tank_x = right_x + c.tank_width / 2
+            tanks.append({
+                "id": f"tank_{next_tank_id}",
+                "x": round(tank_x, 2),
+                "y": round(tank_y, 2),
+                "width": c.tank_width,
+                "height": c.tank_height,
+                "side": side,
+                "last_shot_at": -(c.tank_shoot_interval_seconds),  # ready to fire from turn 1
+                "destroyed": False,
+            })
+            next_tank_id += 1
+            next_tank_y = tank_y + c.tank_min_spacing
+        return tanks, next_tank_id, next_tank_y
+
+    def maybe_fire_from_tanks(
+        self,
+        tanks: list[dict],
+        game_time: float,
+        next_tank_missile_id: int,
+    ) -> tuple[list[dict], int]:
+        c = self._cfg
+        new_missiles: list[dict] = []
+        for tank in tanks:
+            if tank.get("destroyed"):
+                continue
+            if game_time - float(tank["last_shot_at"]) >= c.tank_shoot_interval_seconds:
+                side = tank["side"]
+                vx = c.tank_missile_speed_x if side == "left" else -c.tank_missile_speed_x
+                # Fire from the river-facing edge of the tank
+                fire_x = float(tank["x"]) + (c.tank_width / 2 if side == "left" else -c.tank_width / 2)
+                new_missiles.append({
+                    "id": f"tank_missile_{next_tank_missile_id}",
+                    "x": round(fire_x, 2),
+                    "y": round(float(tank["y"]) + c.tank_height / 2.0, 2),
+                    "width": c.tank_missile_width,
+                    "height": c.tank_missile_height,
+                    "vx": vx,
+                    "fired_at": game_time,
+                })
+                next_tank_missile_id += 1
+                tank["last_shot_at"] = game_time
+        return new_missiles, next_tank_missile_id
+
+    def advance_tank_missiles(self, tank_missiles: list[dict], elapsed_seconds: float) -> list[dict]:
+        """Move each tank missile horizontally; discard those that leave the world bounds."""
+        c = self._cfg
+        kept: list[dict] = []
+        for tm in tank_missiles:
+            tm["x"] += float(tm["vx"]) * elapsed_seconds
+            if 0.0 <= tm["x"] <= c.world_width:
+                kept.append(tm)
+        return kept
+
+    def handle_tank_missile_collision(self, plane_state: dict, tank_missiles: list[dict]) -> dict | None:
+        """Check whether any tank missile overlaps the plane; consume the missile if so."""
+        c = self._cfg
+        plane_x = float(plane_state["x"])
+        plane_y = float(plane_state["y"])
+        p_left = plane_x - c.plane_half_width
+        p_right = plane_x + c.plane_half_width
+        p_bottom = plane_y
+        p_top = plane_y + c.plane_half_width * 2  # use full plane height approximation
+        for tm in list(tank_missiles):
+            tm_left = float(tm["x"]) - float(tm["width"]) / 2
+            tm_right = float(tm["x"]) + float(tm["width"]) / 2
+            tm_bottom = float(tm["y"])
+            tm_top = tm_bottom + float(tm["height"])
+            if self._aabb_overlap(p_left, p_right, p_bottom, p_top, tm_left, tm_right, tm_bottom, tm_top):
+                tank_missiles.remove(tm)
+                return {"event_type": "collision_tank_missile", "data": self._apply_plane_hit(plane_state)}
+        return None
+
+    def prune_old_tanks(self, tanks: list[dict], camera_y: float) -> list[dict]:
+        min_y = camera_y - self._cfg.tank_height
+        return [t for t in tanks if t["y"] + t["height"] >= min_y]
 
         nearest_segment = min(river_banks, key=lambda segment: abs(segment["y"] - y))
         return float(nearest_segment["left_x"]), float(nearest_segment["right_x"])
