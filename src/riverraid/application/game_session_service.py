@@ -518,6 +518,3 @@ class GameSessionService:
     def prune_old_tanks(self, tanks: list[dict], camera_y: float) -> list[dict]:
         min_y = camera_y - self._cfg.tank_height
         return [t for t in tanks if t["y"] + t["height"] >= min_y]
-
-        nearest_segment = min(river_banks, key=lambda segment: abs(segment["y"] - y))
-        return float(nearest_segment["left_x"]), float(nearest_segment["right_x"])

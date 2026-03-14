@@ -16,7 +16,6 @@ let cameraY = 0;
 let ws = null;
 let inputSeq = 0;
 let isGameOver = false;
-let lastFireTime = 0;
 const pressedKeys = new Set();
 
 restartBtn.disabled = true;
@@ -427,27 +426,6 @@ function sendKeyEvent(type, key) {
     }));
 }
 
-function sendFire() {
-    if (!ws || ws.readyState !== WebSocket.OPEN || isGameOver) {
-        return;
-    }
-
-    const now = Date.now();
-    if (now - lastFireTime < 500) {
-        return;
-    }
-    lastFireTime = now;
-
-    inputSeq += 1;
-    ws.send(JSON.stringify({
-        type: 'input',
-        seq: inputSeq + 1,
-        payload: {
-            fire: true,
-        }
-    }));
-}
-
 function sendRestart() {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         return;
@@ -469,9 +447,6 @@ window.addEventListener('keydown', (event) => {
         }
         pressedKeys.add(event.key);
         sendKeyEvent('keydown', event.key === ' ' ? 'Space' : event.key);
-        if (event.key === ' ') {
-            sendFire();
-        }
     }
 });
 
