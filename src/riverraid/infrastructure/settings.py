@@ -18,6 +18,17 @@ def _get_required_env(name: str) -> str:
     return value
 
 
+def _normalize_database_url(database_url: str) -> str:
+    normalized = database_url.strip()
+    if normalized.startswith("postgresql+asyncpg://"):
+        return normalized
+    if normalized.startswith("postgresql://"):
+        return normalized.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if normalized.startswith("postgres://"):
+        return normalized.replace("postgres://", "postgresql+asyncpg://", 1)
+    return normalized
+
+
 def load_settings() -> Settings:
     env = os.getenv("APP_ENV", "dev")
     is_prod = env.lower() == "prod"
@@ -29,6 +40,7 @@ def load_settings() -> Settings:
         "DATABASE_URL",
         "postgresql+asyncpg://riverraid:riverraid@localhost:5432/riverraid",
     )
+    database_url = _normalize_database_url(database_url)
 
     return Settings(
         env=env,

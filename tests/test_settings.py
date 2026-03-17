@@ -43,3 +43,23 @@ def test_load_settings_prod_uses_provided_values(monkeypatch: pytest.MonkeyPatch
     assert settings.env == "prod"
     assert settings.jwt_secret == "super-secret"
     assert settings.database_url == "postgresql+asyncpg://u:p@db:5432/app"
+
+
+def test_load_settings_prod_normalizes_postgresql_url_to_asyncpg(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("JWT_SECRET", "super-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@db:5432/app")
+
+    settings = load_settings()
+
+    assert settings.database_url == "postgresql+asyncpg://u:p@db:5432/app"
+
+
+def test_load_settings_prod_normalizes_postgres_url_to_asyncpg(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("JWT_SECRET", "super-secret")
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@db:5432/app")
+
+    settings = load_settings()
+
+    assert settings.database_url == "postgresql+asyncpg://u:p@db:5432/app"
