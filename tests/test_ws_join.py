@@ -1183,6 +1183,42 @@ def test_player_missile_destroys_tank():
     assert missiles_after == []  # missile consumed
 
 
+def test_friendly_missile_does_not_damage_plane():
+    from riverraid.application.game_session_service import GameSessionService
+    from riverraid.infrastructure.game_config import load_game_config
+
+    cfg = load_game_config()
+    service = GameSessionService(cfg=cfg)
+
+    plane_state = service.initial_plane_state()
+    plane_state["x"] = 500.0
+    plane_state["y"] = 60.0
+    plane_state["hp"] = 3
+
+    missile = {
+        "id": "missile_1",
+        "x": 500.0,
+        "y": 60.0,
+        "width": cfg.missile_width,
+        "height": cfg.missile_height,
+        "vx": 0.0,
+        "fired_at": 0.0,
+    }
+
+    missiles_after = service.advance_missiles_and_check_collisions(
+        missiles=[missile],
+        fuel_stations=[],
+        bridges=[],
+        helicopters=[],
+        tanks=[],
+        plane_state=plane_state,
+        elapsed_seconds=0.0,
+    )
+
+    assert plane_state["hp"] == 3
+    assert len(missiles_after) == 1
+
+
 def test_tank_fires_after_interval():
     from riverraid.application.game_session_service import GameSessionService
     from riverraid.infrastructure.game_config import load_game_config
@@ -1216,4 +1252,3 @@ def test_tank_fires_after_interval():
         tanks=[tank], game_time=cfg.tank_shoot_interval_seconds, next_tank_missile_id=2
     )
     assert len(new_missiles3) == 1
-
