@@ -2,12 +2,12 @@
 
 ## Current Status
 
-- The running Phase 0 backend does not persist data to a database yet.
-- This document defines the planned relational model for upcoming persistence phases.
+- The backend now persists completed game results to PostgreSQL.
+- Authentication remains name-based and does not use a `players` table yet.
 
 ## Purpose
 
-Define persistent entities for RiverRaid authentication, player progression, and score tracking.
+Define persistent entities for RiverRaid score tracking and future player/account expansion.
 
 ## Database Standards
 
@@ -15,28 +15,42 @@ Define persistent entities for RiverRaid authentication, player progression, and
 - IDs: UUID everywhere
 - Time fields: UTC `timestamptz`
 
-## Core Tables
+## Current Implemented Table
+
+## `game_results`
+
+Stores one row per completed run.
+
+| Field | Type | Notes |
+|---|---|---|
+| id | uuid (pk) | Score row ID |
+| pilot_name | varchar(128) not null | Player-entered display name |
+| score | integer not null | Final run score |
+| level | integer not null | Level reached when the game finished |
+| started_at | timestamptz not null | UTC game start time |
+| finished_at | timestamptz not null | UTC game finish time |
+
+Indexes:
+- index(`pilot_name`)
+- index(`score` desc)
+
+## Planned Future Tables
 
 ## `players`
 
-Stores player identity and account-level progression.
+Possible future account/profile table if the game evolves beyond name-only login.
 
 | Field | Type | Notes |
 |---|---|---|
 | id | uuid (pk) | Player ID |
 | username | varchar(32) unique not null | Public name |
-| password_hash | text not null | Argon2/Bcrypt hash |
 | best_score | integer not null default 0 | Cached best score |
-| total_kills | integer not null default 0 | Lifetime kills |
 | created_at | timestamptz not null | |
 | updated_at | timestamptz not null | |
 
-Indexes:
-- unique(`username`)
-
 ## `player_sessions`
 
-Tracks active/refresh token metadata for session management.
+Possible future refresh-token/session storage.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -48,28 +62,7 @@ Tracks active/refresh token metadata for session management.
 | revoked_at | timestamptz null | |
 | created_at | timestamptz not null | |
 
-Indexes:
-- index(`player_id`)
-- index(`expires_at`)
-
-## `highscores`
-
-Stores score outcomes per completed run.
-
-| Field | Type | Notes |
-|---|---|---|
-| id | uuid (pk) | Score row ID |
-| player_id | uuid not null | FK -> `players.id` |
-| score | integer not null | Final run score |
-| bridge_reached | integer not null default 0 | Progress marker |
-| duration_seconds | integer not null default 0 | Run duration |
-| created_at | timestamptz not null | |
-
-Indexes:
-- index(`player_id`, `score` desc)
-- index(`score` desc)
-
-## Optional (Phase 2)
+## Optional (Later)
 
 ## `player_checkpoints`
 
@@ -84,6 +77,7 @@ Persists last safe spawn bridge for reconnect/resume.
 
 ## Migration Strategy
 
-1. Baseline migration: `players`, `player_sessions`, `highscores`.
-2. Add `player_checkpoints` when reconnect/resume persistence is enabled.
+1. Current schema: `game_results`.
+2. Add `players` and `player_sessions` if account-based auth is introduced.
+3. Add `player_checkpoints` when reconnect/resume persistence is enabled.
 

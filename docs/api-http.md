@@ -4,7 +4,7 @@
 
 Define non-realtime REST endpoints currently exposed by the backend.
 
-- REST currently handles config-backed auth and health/demo endpoints.
+- REST currently handles name-based auth, leaderboard retrieval, and health/demo endpoints.
 - WebSocket handles realtime simulation and gameplay state.
 
 ## Base
@@ -28,7 +28,7 @@ All error responses:
 
 Current HTTP status usage in this codebase:
 - `200` success
-- `401` invalid credentials
+- `400` invalid player name / invalid request data
 - `501` not implemented (Phase 0 placeholders)
 
 ## Implemented Endpoints
@@ -50,18 +50,17 @@ Returns service health:
 
 ### `POST /auth/login`
 
-Phase 0 auth is config-backed (development mode) and container-friendly.
+Phase 0 auth is name-based and container-friendly.
 
-- One configured user is loaded from environment/config.
-- JWT subject (`sub`) maps to configured `AUTH_PLAYER_ID`.
+- The client sends only a player name.
+- The backend derives a stable `player_id` from that name.
 
 Issue JWT/session token.
 
 Request:
 ```json
 {
-  "username": "captain_neo",
-  "password": "strong_password"
+  "username": "captain_neo"
 }
 ```
 
@@ -76,8 +75,28 @@ Response `200`:
 ```
 
 Validation behavior:
-- Verify `username` + `password` against configured values.
-- Return `401` for invalid username/password.
+- Reject blank names.
+- Return `400` with `INVALID_PLAYER_NAME` for empty/whitespace-only names.
+
+### `GET /scores`
+
+Returns the top 10 completed game results ordered by score descending.
+
+Response `200`:
+```json
+[
+  {
+    "pilot_name": "captain_neo",
+    "score": 1200,
+    "level": 7,
+    "finished_at": "2026-03-17T10:00:00+00:00"
+  }
+]
+```
+
+Notes:
+- Used by the demo page leaderboard.
+- Queried before the first game and after every game over.
 
 ### `POST /auth/register`
 
@@ -104,9 +123,10 @@ All three endpoints return `501`:
 
 ## Security Notes
 
-- Config auth is for development only.
+- `JWT_SECRET` and `DATABASE_URL` must be supplied explicitly in production.
+- Render Postgres URLs are normalized to the async SQLAlchemy driver format used by the app.
 - JWT expiry remains short-lived.
 
 ## Notes on Scope
 
-- `GET /players/me`, leaderboard, and persistent profile endpoints are planned but not implemented in Phase 0.
+- `GET /players/me` and persistent profile endpoints are not implemented in Phase 0.

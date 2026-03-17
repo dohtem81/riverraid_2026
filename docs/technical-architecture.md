@@ -3,12 +3,12 @@
 ## Current Implementation Snapshot (March 2026)
 
 - Runtime is a single FastAPI service.
-- Auth is config-based (single configured dev user) with JWT issuance/validation.
+- Auth is name-based with JWT issuance/validation.
 - Realtime gameplay is split across two Clean Architecture layers:
   - **`SessionRuntime`** (application layer): owns all game-tick orchestration — world generation, entity advancement, collision resolution, key-state movement, missile/tank logic.
   - **`WebSocketGateway`** (interface adapter): thin transport delegate — decodes/validates WS messages, calls `SessionRuntime`, encodes responses.
 - Input uses a key-state model (`keydown`/`keyup`): the server holds a `keys_down` set per session and applies continuous movement each tick without OS key-repeat delay.
-- No PostgreSQL or Redis integration is implemented yet.
+- PostgreSQL is integrated for completed game-result persistence and top-score queries.
 
 ## High-Level
 
@@ -54,10 +54,10 @@ Layer responsibilities:
 - Infrastructure: FastAPI/Uvicorn bootstrapping, JWT library wiring, config file/env parsing, optional DB/Redis adapters.
 
 Phase 0 constraints under Clean Architecture:
-- Auth source is config-file based (single configured user).
-- JWT `sub` equals configured stable `player_id`.
+- Auth is name-only; the backend deterministically derives a stable `player_id` from the supplied player name.
+- JWT `sub` equals the derived stable `player_id`.
 - `POST /auth/register`, `POST /auth/refresh`, `POST /auth/logout` return `501`.
-- Runtime is container-first (single service container, no DB required).
+- Runtime is container-first and can run with a colocated PostgreSQL service.
 - Unit tests are mandatory and must pass in CI before container publish.
 
 Architecture fitness checks:
@@ -86,8 +86,9 @@ Architecture fitness checks:
 ## Data Ownership
 
 - **Authoritative runtime state:** in-memory inside session runtime.
-- **Durable state (planned):** PostgreSQL (`players`, `player_sessions`, `highscores`, optional `player_checkpoints`).
-- **Cache/transient state (planned):** Redis optional; never authoritative for simulation.
+- **Durable state:** PostgreSQL `game_results` table for completed runs and leaderboard queries.
+- **Future durable state:** optional `players`, `player_sessions`, `player_checkpoints`.
+- **Cache/transient state:** Redis optional; never authoritative for simulation.
 
 ## Security and Fairness
 
@@ -100,8 +101,8 @@ Architecture fitness checks:
 
 - Python 3.12+
 - FastAPI + Uvicorn
-- SQLAlchemy + Alembic (planned)
-- PostgreSQL 15+ (planned)
+- SQLAlchemy async + `asyncpg`
+- PostgreSQL 15+
 - Redis (optional, planned)
 
 ## Deployment Plan
@@ -110,13 +111,19 @@ Architecture fitness checks:
 
 - Single container image.
 - One service instance.
-- No database dependency in current implementation.
-- Optional PostgreSQL/Redis integration planned for next phases.
+- PostgreSQL dependency for leaderboard / finished-game persistence.
+- Render deployment should provide `DATABASE_URL` and `JWT_SECRET` via secret environment variables.
 
 Gameplay mode for MVP:
 - One active player per game session.
 - No shared world state between players.
-- Leaderboard and profiles remain persisted via HTTP + PostgreSQL.
+- Leaderboard is persisted via PostgreSQL.
+
+## Production Configuration
+
+- `APP_ENV=prod` disables insecure defaults and requires explicit `JWT_SECRET` and `DATABASE_URL`.
+- Render-style URLs (`postgres://...`, `postgresql://...`) are normalized to `postgresql+asyncpg://...` during startup.
+- Secrets must be injected through environment variables, never committed to source.
 
 ### Phase 2 (Scale)
 
