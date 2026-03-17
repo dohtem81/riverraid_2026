@@ -8,7 +8,7 @@ INDEX_HTML = f"""
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>RiverRaid Phase 0</title>
+    <title>RiverRaid 2026 v0.1 alpha</title>
     <style>{DEMO_STYLE}</style>
 </head>
 <body>
