@@ -97,6 +97,7 @@ class Missile(BaseSessionEntity):
     height: float
     fired_at: float = 0.0
     vx: float = 0.0  # non-zero for tank missiles (horizontal travel)
+    prev_x: float | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "Missile":
@@ -108,10 +109,14 @@ class Missile(BaseSessionEntity):
             height=float(data["height"]),
             fired_at=float(data.get("fired_at", 0.0)),
             vx=float(data.get("vx", 0.0)),
+            prev_x=float(data["prev_x"]) if data.get("prev_x") is not None else None,
         )
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "x": self.x, "y": self.y, "width": self.width, "height": self.height, "fired_at": self.fired_at, "vx": self.vx}
+        payload = {"id": self.id, "x": self.x, "y": self.y, "width": self.width, "height": self.height, "fired_at": self.fired_at, "vx": self.vx}
+        if self.prev_x is not None:
+            payload["prev_x"] = self.prev_x
+        return payload
 
 
 @dataclass

@@ -3,13 +3,17 @@ import random
 from riverraid.interfaces.ws.gateway import WebSocketGateway
 
 
-def _login(client):
+def _login_response(client):
     response = client.post(
         "/api/v1/auth/login",
-        json={"username": "pilot", "password": "pilot1234"},
+        json={"username": "pilot"},
     )
     assert response.status_code == 200
-    return response.json()["access_token"]
+    return response.json()
+
+
+def _login(client):
+    return _login_response(client)["access_token"]
 
 
 def _receive_until_type(websocket, expected_type, max_messages=10):
@@ -37,7 +41,7 @@ def test_ws_join_invalid_token_returns_error(client):
 
 
 def test_ws_join_valid_token_returns_join_ack(client):
-    token = _login(client)
+    auth = _login_response(client)
 
     with client.websocket_connect("/ws") as websocket:
         websocket.send_json(
@@ -45,13 +49,13 @@ def test_ws_join_valid_token_returns_join_ack(client):
                 "type": "join",
                 "seq": 1,
                 "payload": {
-                    "access_token": token,
+                    "access_token": auth["access_token"],
                 },
             }
         )
         message = _receive_until_type(websocket, "join_ack")
         assert message["type"] == "join_ack"
-        assert message["payload"]["player_id"] == "11111111-1111-1111-1111-111111111111"
+        assert message["payload"]["player_id"] == auth["player_id"]
         assert message["payload"]["tick_rate"] == 30
         assert message["payload"]["render_config"]["world_width"] == 1000.0
         assert message["payload"]["render_config"]["viewport_height"] == 600.0
@@ -396,7 +400,7 @@ def test_ws_collision_with_bank_emits_event(client):
         _receive_until_type(websocket, "snapshot")
 
         found_collision = False
-        for index in range(30):
+        for index in range(80):
             websocket.send_json(
                 {
                     "type": "input",
@@ -408,7 +412,7 @@ def test_ws_collision_with_bank_emits_event(client):
                 }
             )
 
-            for _ in range(4):
+            for _ in range(8):
                 message = websocket.receive_json()
                 if message.get("type") == "event" and message.get("payload", {}).get("event_type") == "collision_bank":
                     found_collision = True
@@ -1135,6 +1139,35 @@ def test_tank_missile_misses_plane():
 
     assert event is None
     assert len(tank_missiles) == 1  # missile not consumed
+
+
+def test_fast_tank_missile_crossing_plane_still_hits():
+    from riverraid.application.game_session_service import GameSessionService
+    from riverraid.infrastructure.game_config import load_game_config
+
+    cfg = load_game_config()
+    service = GameSessionService(cfg=cfg)
+    plane_state = service.initial_plane_state()
+    hp_before = plane_state["hp"]
+
+    tank_missiles = [{
+        "id": "tank_missile_1",
+        "x": plane_state["x"] - 30.0,
+        "y": plane_state["y"],
+        "width": cfg.tank_missile_width,
+        "height": cfg.tank_missile_height,
+        "vx": cfg.tank_missile_speed_x,
+        "prev_x": plane_state["x"] - 30.0,
+        "fired_at": 0.0,
+    }]
+
+    tank_missiles = service.advance_tank_missiles(tank_missiles=tank_missiles, elapsed_seconds=0.3)
+    event = service.handle_tank_missile_collision(plane_state=plane_state, tank_missiles=tank_missiles)
+
+    assert event is not None
+    assert event["event_type"] == "collision_tank_missile"
+    assert plane_state["hp"] == hp_before - 1
+    assert tank_missiles == []
 
 
 def test_player_missile_destroys_tank():

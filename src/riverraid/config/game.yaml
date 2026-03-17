@@ -127,7 +127,7 @@ tank_width: 20.0
 tank_height: 14.0
 
 # How often (seconds) a tank fires a horizontal missile.
-tank_shoot_interval_seconds: 0.5
+tank_shoot_interval_seconds: 2.0
 
 # Horizontal speed (game-units/s) of a tank missile crossing the screen.
 tank_missile_speed_x: 200.0

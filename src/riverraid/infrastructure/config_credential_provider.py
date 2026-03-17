@@ -1,4 +1,4 @@
-import hmac
+from uuid import NAMESPACE_URL, uuid5
 
 from riverraid.domain.models import AuthenticatedPlayer
 from riverraid.infrastructure.settings import Settings
@@ -8,10 +8,16 @@ class ConfigCredentialProvider:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
 
-    def validate(self, username: str, password: str) -> AuthenticatedPlayer | None:
-        is_username_valid = hmac.compare_digest(username, self._settings.auth_username)
-        is_password_valid = hmac.compare_digest(password, self._settings.auth_password)
-        if not (is_username_valid and is_password_valid):
+    @staticmethod
+    def _player_id_for(username: str) -> str:
+        return str(uuid5(NAMESPACE_URL, f"riverraid://player/{username}"))
+
+    def validate(self, username: str) -> AuthenticatedPlayer | None:
+        normalized_username = username.strip()
+        if not normalized_username:
             return None
 
-        return AuthenticatedPlayer(player_id=self._settings.auth_player_id, username=self._settings.auth_username)
+        return AuthenticatedPlayer(
+            player_id=self._player_id_for(normalized_username),
+            username=normalized_username,
+        )

@@ -1,25 +1,41 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: riverraid
+      POSTGRES_PASSWORD: riverraid
+      POSTGRES_DB: riverraid
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U riverraid"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   backend:
     build: .
     ports:
       - "8000:8000"
     environment:
       APP_ENV: dev
-      AUTH_USERNAME: pilot
-      AUTH_PASSWORD: pilot1234
-      AUTH_PLAYER_ID: 11111111-1111-1111-1111-111111111111
       JWT_SECRET: dev-secret-at-least-32-characters-long
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_TTL_SECONDS: 3600
+      DATABASE_URL: postgresql+asyncpg://riverraid:riverraid@db:5432/riverraid
+    depends_on:
+      db:
+        condition: service_healthy
 
   tests:
     build: .
     environment:
       APP_ENV: dev
-      AUTH_USERNAME: pilot
-      AUTH_PASSWORD: pilot1234
-      AUTH_PLAYER_ID: 11111111-1111-1111-1111-111111111111
       JWT_SECRET: dev-secret-at-least-32-characters-long
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_TTL_SECONDS: 3600
+      DATABASE_URL: postgresql+asyncpg://riverraid:riverraid@db:5432/riverraid
+    depends_on:
+      db:
+        condition: service_healthy
     command: ["pytest", "-q"]

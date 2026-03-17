@@ -18,8 +18,8 @@ class LoginWithConfiguredCredentials:
         self._token_service = token_service
         self._token_ttl_seconds = token_ttl_seconds
 
-    def execute(self, username: str, password: str) -> LoginResult | None:
-        player = self._credential_provider.validate(username=username, password=password)
+    def execute(self, username: str) -> LoginResult | None:
+        player = self._credential_provider.validate(username=username)
         if player is None:
             return None
 

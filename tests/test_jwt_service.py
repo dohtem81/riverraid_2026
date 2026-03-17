@@ -8,12 +8,10 @@ from riverraid.infrastructure.settings import Settings
 def _settings() -> Settings:
     return Settings(
         env="dev",
-        auth_username="pilot",
-        auth_password="pilot1234",
-        auth_player_id="11111111-1111-1111-1111-111111111111",
         jwt_secret="test-secret-at-least-32-characters-long",
         jwt_algorithm="HS256",
         access_token_ttl_seconds=3600,
+        database_url="postgresql+asyncpg://riverraid:riverraid@db:5432/riverraid",
     )
 
 

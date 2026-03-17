@@ -323,19 +323,49 @@ function updateHud(hud) {
 }
 
 async function login() {
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
+    const username = document.getElementById('username').value.trim();
+    if (!username) {
+        throw new Error('Enter player name');
+    }
     const response = await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username }),
     });
 
     if (!response.ok) {
-        throw new Error('Login failed');
+        throw new Error('Connect failed');
     }
 
     return response.json();
+}
+
+async function fetchAndRenderScores() {
+    const el = document.getElementById('leaderboard-body');
+    if (!el) { return; }
+    try {
+        const res = await fetch('/api/v1/scores');
+        if (!res.ok) { return; }
+        const scores = await res.json();
+        if (!scores || scores.length === 0) {
+            el.innerHTML = '<p class="empty">No scores yet</p>';
+            return;
+        }
+        let html = '<table><thead><tr><th>#</th><th>Pilot</th><th>Score</th><th>Lvl</th><th>Date</th></tr></thead><tbody>';
+        scores.forEach((s, i) => {
+            const date = new Date(s.finished_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const name = s.pilot_name.length > 10 ? s.pilot_name.slice(0, 9) + '\u2026' : s.pilot_name;
+            html += `<tr>
+                <td class="rank">${i + 1}</td>
+                <td title="${s.pilot_name}">${name}</td>
+                <td class="score">${s.score}</td>
+                <td class="level">${s.level}</td>
+                <td>${date}</td>
+            </tr>`;
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+    } catch (_) { /* silently ignore */ }
 }
 
 async function connect() {
@@ -372,13 +402,14 @@ async function connect() {
                     isGameOver = true;
                     restartBtn.disabled = false;
                     setStatus('Game over. Click Restart.');
+                    fetchAndRenderScores();
                 }
                 if (msg.payload.event_type === 'game_restarted') {
                     isGameOver = false;
                     restartBtn.disabled = true;
                     setStatus('Game restarted. Use Left/Right arrow keys to move, Space to fire.');
                 }
-                const crashEvents = ['collision_bank', 'collision_bridge', 'crash_fuel', 'collision_helicopter'];
+                const crashEvents = ['collision_bank', 'collision_bridge', 'crash_fuel', 'collision_helicopter', 'collision_tank_missile'];
                 if (crashEvents.includes(msg.payload.event_type) && msg.payload.data) {
                     if (typeof msg.payload.data.respawn_camera_y === 'number') {
                         cameraY = msg.payload.data.respawn_camera_y;
@@ -460,5 +491,6 @@ window.addEventListener('keyup', (event) => {
 
 document.getElementById('connect').addEventListener('click', connect);
 restartBtn.addEventListener('click', sendRestart);
+fetchAndRenderScores();
 render();
 """

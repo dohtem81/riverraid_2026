@@ -5,8 +5,10 @@ from uuid import uuid4
 
 from fastapi import WebSocket
 
+from riverraid.application.ports import GameResultRepositoryPort
 from riverraid.application.session_runtime import SessionRuntime, SessionState as _SessionState
 from riverraid.application.use_cases import ValidateJoinToken
+from riverraid.domain.models import AuthenticatedPlayer
 from riverraid.infrastructure.game_config import GameConfig
 from riverraid.infrastructure.jwt_token_service import TokenValidationError
 
@@ -17,10 +19,12 @@ class WebSocketGateway:
         validate_join_token: ValidateJoinToken,
         cfg: GameConfig | None = None,
         runtime: SessionRuntime | None = None,
+        game_result_repo: GameResultRepositoryPort | None = None,
     ) -> None:
         self._validate_join_token = validate_join_token
         self._runtime = runtime or SessionRuntime(cfg=cfg)
         self._cfg = self._runtime.cfg
+        self._game_result_repo = game_result_repo
 
     def __getattr__(self, name: str):
         cfg_name = name.lstrip("_")
@@ -38,6 +42,8 @@ class WebSocketGateway:
         server_seq = 2
         g = self._runtime.new_state()
         last_update_time = time.monotonic()
+        current_player: AuthenticatedPlayer | None = None
+        game_started_at: datetime | None = None
 
         try:
             while True:
@@ -49,6 +55,7 @@ class WebSocketGateway:
                         server_seq += 1
                         await self._emit_event(websocket, session_id, server_seq, world_event)
                         if game_over:
+                            await self._persist_game_over(current_player, g, game_started_at)
                             server_seq += 1
                             await self._emit_game_over(websocket, session_id, server_seq)
                         else:
@@ -84,6 +91,8 @@ class WebSocketGateway:
                         continue
                     joined = True
                     game_over = False
+                    current_player = player
+                    game_started_at = datetime.now(UTC)
                     self._runtime.reset_for_new_game(g)
                     server_seq = 1
                     await websocket.send_json(
@@ -106,6 +115,7 @@ class WebSocketGateway:
                         )
                         continue
                     game_over = False
+                    game_started_at = datetime.now(UTC)
                     self._runtime.reset_for_new_game(g)
                     server_seq += 1
                     await self._emit_event(
@@ -168,6 +178,7 @@ class WebSocketGateway:
                         server_seq += 1
                         await self._emit_event(websocket, session_id, server_seq, collision_event)
                         if game_over:
+                            await self._persist_game_over(current_player, g, game_started_at)
                             server_seq += 1
                             await self._emit_game_over(websocket, session_id, server_seq)
                     server_seq += 1
@@ -226,6 +237,7 @@ class WebSocketGateway:
                         server_seq += 1
                         await self._emit_event(websocket, session_id, server_seq, collision_event)
                         if game_over:
+                            await self._persist_game_over(current_player, g, game_started_at)
                             server_seq += 1
                             await self._emit_game_over(websocket, session_id, server_seq)
                     server_seq += 1
@@ -253,6 +265,28 @@ class WebSocketGateway:
                 "payload": self._runtime.snapshot_for_state(g),
             }
         )
+
+    async def _persist_game_over(
+        self,
+        player: AuthenticatedPlayer | None,
+        g: _SessionState,
+        started_at: datetime | None,
+    ) -> None:
+        """Save the finished game to persistent storage if a repository is wired."""
+        if self._game_result_repo is None or player is None or started_at is None:
+            return
+        score = g.plane_state.score if g.plane_state else 0
+        level = g.level
+        try:
+            await self._game_result_repo.save(
+                pilot_name=player.username,
+                score=score,
+                level=level,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
+        except Exception:  # pragma: no cover – never crash the game loop
+            pass
 
     async def _emit_game_over(self, websocket: WebSocket, session_id: str, seq: int) -> None:
         await self._emit_event(websocket, session_id, seq, {"event_type": "game_over", "data": {"reason": "no_lives"}})

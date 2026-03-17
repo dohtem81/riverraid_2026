@@ -480,6 +480,7 @@ class GameSessionService:
                     "width": c.tank_missile_width,
                     "height": c.tank_missile_height,
                     "vx": vx,
+                    "prev_x": round(fire_x, 2),
                     "fired_at": game_time,
                 })
                 next_tank_missile_id += 1
@@ -491,6 +492,7 @@ class GameSessionService:
         c = self._cfg
         kept: list[dict] = []
         for tm in tank_missiles:
+            tm["prev_x"] = float(tm.get("x", 0.0))
             tm["x"] += float(tm["vx"]) * elapsed_seconds
             if 0.0 <= tm["x"] <= c.world_width:
                 kept.append(tm)
@@ -506,8 +508,11 @@ class GameSessionService:
         p_bottom = plane_y
         p_top = plane_y + c.plane_half_width * 2  # use full plane height approximation
         for tm in list(tank_missiles):
-            tm_left = float(tm["x"]) - float(tm["width"]) / 2
-            tm_right = float(tm["x"]) + float(tm["width"]) / 2
+            current_x = float(tm["x"])
+            previous_x = float(tm.get("prev_x", current_x))
+            half_width = float(tm["width"]) / 2
+            tm_left = min(previous_x, current_x) - half_width
+            tm_right = max(previous_x, current_x) + half_width
             tm_bottom = float(tm["y"])
             tm_top = tm_bottom + float(tm["height"])
             if self._aabb_overlap(p_left, p_right, p_bottom, p_top, tm_left, tm_right, tm_bottom, tm_top):

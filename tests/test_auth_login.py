@@ -1,23 +1,26 @@
+from riverraid.infrastructure.config_credential_provider import ConfigCredentialProvider
+
+
 def test_login_success(client):
     response = client.post(
         "/api/v1/auth/login",
-        json={"username": "pilot", "password": "pilot1234"},
+        json={"username": "pilot"},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["token_type"] == "Bearer"
-    assert payload["player_id"] == "11111111-1111-1111-1111-111111111111"
+    assert payload["player_id"] == ConfigCredentialProvider._player_id_for("pilot")
     assert payload["expires_in"] == 3600
     assert isinstance(payload["access_token"], str)
 
 
-def test_login_invalid_credentials(client):
+def test_login_blank_player_name(client):
     response = client.post(
         "/api/v1/auth/login",
-        json={"username": "pilot", "password": "wrong"},
+        json={"username": "   "},
     )
 
-    assert response.status_code == 401
+    assert response.status_code == 400
     body = response.json()
-    assert body["detail"]["error"]["code"] == "INVALID_CREDENTIALS"
+    assert body["detail"]["error"]["code"] == "INVALID_PLAYER_NAME"

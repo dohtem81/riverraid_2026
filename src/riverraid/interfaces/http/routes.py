@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
+from riverraid.application.ports import GameResultRepositoryPort
 from riverraid.application.use_cases import LoginWithConfiguredCredentials
 from riverraid.interfaces.http.schemas import ErrorResponse, LoginRequest, LoginResponse
 
@@ -9,14 +10,26 @@ def build_auth_router(login_use_case: LoginWithConfiguredCredentials) -> APIRout
 
     @router.post("/login", response_model=LoginResponse)
     def login(body: LoginRequest) -> LoginResponse:
-        result = login_use_case.execute(username=body.username, password=body.password)
-        if result is None:
+        username = body.username.strip()
+        if not username:
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail={
                     "error": {
-                        "code": "INVALID_CREDENTIALS",
-                        "message": "Invalid username or password",
+                        "code": "INVALID_PLAYER_NAME",
+                        "message": "Player name is required",
+                    }
+                },
+            )
+
+        result = login_use_case.execute(username=username)
+        if result is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "error": {
+                        "code": "INVALID_PLAYER_NAME",
+                        "message": "Player name is required",
                     }
                 },
             )
@@ -63,5 +76,15 @@ def build_auth_router(login_use_case: LoginWithConfiguredCredentials) -> APIRout
                 }
             },
         )
+
+    return router
+
+
+def build_scores_router(repo: GameResultRepositoryPort) -> APIRouter:
+    router = APIRouter(prefix="/api/v1", tags=["scores"])
+
+    @router.get("/scores")
+    async def top_scores() -> list[dict]:
+        return await repo.fetch_top_scores(limit=10)
 
     return router
