@@ -32,3 +32,7 @@ class GameResultRepositoryPort(Protocol):
     async def fetch_top_scores(self, limit: int = 10) -> list[dict]:
         """Return the top *limit* scores ordered by score descending."""
         ...
+
+    async def fetch_all_games(self) -> list[dict]:
+        """Return all recorded game rows with full fields."""
+        ...

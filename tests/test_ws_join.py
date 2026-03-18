@@ -306,6 +306,61 @@ def test_ws_keydown_rejects_invalid_key(client):
         assert error["payload"]["code"] == "INVALID_INPUT"
 
 
+def test_up_down_speed_modifies_scroll_speed():
+    from riverraid.application.session_runtime import SessionRuntime
+    from riverraid.application.session_entities import Plane
+
+    runtime = SessionRuntime()
+    dt = runtime._tick_interval_seconds
+
+    # Baseline scroll at normal speed.
+    normal_state = runtime.new_state()
+    normal_state.plane_state = Plane.from_dict(runtime._initial_plane_state())
+    normal_state.keys_down = set()
+    runtime._advance_world(normal_state, dt)
+    normal_camera_y = normal_state.camera_y
+
+    # ArrowUp held: camera should advance faster.
+    fast_state = runtime.new_state()
+    fast_state.plane_state = Plane.from_dict(runtime._initial_plane_state())
+    fast_state.keys_down = {"up"}
+    runtime._advance_world(fast_state, dt)
+    fast_camera_y = fast_state.camera_y
+
+    # ArrowDown held: camera should advance slower.
+    slow_state = runtime.new_state()
+    slow_state.plane_state = Plane.from_dict(runtime._initial_plane_state())
+    slow_state.keys_down = {"down"}
+    runtime._advance_world(slow_state, dt)
+    slow_camera_y = slow_state.camera_y
+
+    assert fast_camera_y > normal_camera_y > slow_camera_y
+    assert abs(fast_camera_y - normal_camera_y * runtime._high_speed_multiplier) < 1e-9
+    assert abs(slow_camera_y - normal_camera_y * runtime._low_speed_multiplier) < 1e-9
+
+    # Left/right lateral speed must be unaffected by up/down.
+    left_normal = runtime.new_state()
+    left_normal.plane_state = Plane.from_dict(runtime._initial_plane_state())
+    left_normal.keys_down = {"left"}
+    runtime._advance_world(left_normal, dt)
+
+    left_with_up = runtime.new_state()
+    left_with_up.plane_state = Plane.from_dict(runtime._initial_plane_state())
+    left_with_up.keys_down = {"left", "up"}
+    runtime._advance_world(left_with_up, dt)
+
+    assert abs(left_normal.plane_state.x - left_with_up.plane_state.x) < 1e-9
+
+
+def test_enemy_spawn_multiplier_increases_10_percent_per_level():
+    from riverraid.application.session_runtime import SessionRuntime
+
+    assert SessionRuntime._enemy_spawn_multiplier(1) == 1.0
+    assert SessionRuntime._enemy_spawn_multiplier(2) == 1.1
+    assert SessionRuntime._enemy_spawn_multiplier(3) == 1.2
+    assert SessionRuntime._enemy_spawn_multiplier(10) == 1.9
+
+
 def test_missile_cooldown_prevents_rapid_fire():
     from riverraid.application.session_runtime import SessionRuntime
     from riverraid.application.session_entities import Plane
@@ -1084,6 +1139,190 @@ def test_prune_old_helicopters():
 
     assert len(pruned) == 1
     assert pruned[0]["id"] == "heli_2"
+
+
+def test_ensure_jets_until_spawns_jets():
+    random.seed(77)
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    center = gateway._world_width / 2
+    river_banks = [
+        {
+            "y": float(i),
+            "left_x": center - gateway._river_max_width / 2,
+            "right_x": center + gateway._river_max_width / 2,
+        }
+        for i in range(0, int(gateway._jet_min_spacing * 3), 10)
+    ]
+
+    jets, next_id, next_y = gateway._ensure_jets_until(
+        jets=[],
+        next_jet_id=1,
+        next_jet_y=0.0,
+        river_banks=river_banks,
+        target_y=gateway._jet_min_spacing * 2.5,
+    )
+
+    assert len(jets) >= 1
+    assert next_id >= 2
+    assert next_y > 0.0
+    assert jets[0]["speed"] == gateway._jet_speed
+    assert jets[0]["direction"] in [1, -1]
+    half_w = gateway._jet_width / 2
+    for jet in jets:
+        if jet["direction"] == 1:
+            assert jet["x"] == -half_w
+        else:
+            assert jet["x"] == gateway._world_width + half_w
+
+
+def test_advance_jets_moves_horizontally():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    jet = {
+        "id": "jet_1",
+        "x": 300.0,
+        "y": 100.0,
+        "width": gateway._jet_width,
+        "height": gateway._jet_height,
+        "speed": gateway._jet_speed,
+        "direction": 1,
+        "left_bound": 200.0,
+        "right_bound": 700.0,
+    }
+
+    gateway._advance_jets(jets=[jet], elapsed_seconds=0.1)
+
+    assert jet["x"] > 300.0
+    assert jet["direction"] == 1
+
+
+def test_prune_old_jets_despawns_after_leaving_screen_side():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    half_w = gateway._jet_width / 2
+    jets = [
+        {
+            "id": "jet_left_to_right_gone",
+            "x": gateway._world_width + half_w + 1.0,
+            "y": 120.0,
+            "width": gateway._jet_width,
+            "height": gateway._jet_height,
+            "speed": gateway._jet_speed,
+            "direction": 1,
+            "left_bound": -half_w,
+            "right_bound": gateway._world_width + half_w,
+        },
+        {
+            "id": "jet_right_to_left_gone",
+            "x": -half_w - 1.0,
+            "y": 140.0,
+            "width": gateway._jet_width,
+            "height": gateway._jet_height,
+            "speed": gateway._jet_speed,
+            "direction": -1,
+            "left_bound": -half_w,
+            "right_bound": gateway._world_width + half_w,
+        },
+        {
+            "id": "jet_still_visible",
+            "x": gateway._world_width * 0.5,
+            "y": 160.0,
+            "width": gateway._jet_width,
+            "height": gateway._jet_height,
+            "speed": gateway._jet_speed,
+            "direction": 1,
+            "left_bound": -half_w,
+            "right_bound": gateway._world_width + half_w,
+        },
+    ]
+
+    kept = gateway._prune_old_jets(jets=jets, camera_y=0.0)
+    ids = {jet["id"] for jet in kept}
+
+    assert "jet_still_visible" in ids
+    assert "jet_left_to_right_gone" not in ids
+    assert "jet_right_to_left_gone" not in ids
+
+
+def test_plane_collision_with_jet_causes_damage():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    plane_state = gateway._initial_plane_state()
+    plane_state["x"] = 500.0
+    plane_state["y"] = 100.0
+    plane_state["hp"] = 3
+    jets = [
+        {
+            "id": "jet_1",
+            "x": 500.0,
+            "y": 95.0,
+            "width": gateway._jet_width,
+            "height": gateway._jet_height,
+            "speed": gateway._jet_speed,
+            "direction": 1,
+            "left_bound": 300.0,
+            "right_bound": 700.0,
+        }
+    ]
+
+    event = gateway._handle_jet_collision(plane_state=plane_state, jets=jets)
+
+    assert event is not None
+    assert event["event_type"] == "collision_jet"
+    assert plane_state["hp"] == 2
+
+
+def test_jet_emitted_in_entities_when_in_view():
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    jet = {
+        "id": "jet_1",
+        "x": 500.0,
+        "y": 120.0,
+        "width": gateway._jet_width,
+        "height": gateway._jet_height,
+        "speed": gateway._jet_speed,
+        "direction": -1,
+        "left_bound": 300.0,
+        "right_bound": 700.0,
+    }
+
+    entities = gateway._all_entities_in_view(
+        fuel_stations=[],
+        missiles=[],
+        bridges=[],
+        helicopters=[],
+        jets=[jet],
+        camera_y=0.0,
+    )
+
+    assert len(entities) == 1
+    assert entities[0]["kind"] == "jet"
+    assert entities[0]["id"] == "jet_1"
+
+
+def test_tanks_unlock_at_level_2_and_jets_at_level_3():
+    from riverraid.application.session_runtime import SessionRuntime
+    from riverraid.application.session_entities import Plane
+
+    runtime = SessionRuntime()
+
+    level1_state = runtime.new_state()
+    level1_state.plane_state = Plane.from_dict(runtime._initial_plane_state())
+    level1_state.level = 1
+    runtime._advance_world(level1_state, runtime._tick_interval_seconds)
+    assert len(level1_state.tanks) == 0
+    assert len(level1_state.jets) == 0
+
+    level2_state = runtime.new_state()
+    level2_state.plane_state = Plane.from_dict(runtime._initial_plane_state())
+    level2_state.level = 2
+    runtime._advance_world(level2_state, runtime._tick_interval_seconds)
+    assert len(level2_state.tanks) >= 1
+    assert len(level2_state.jets) == 0
+
+    level3_state = runtime.new_state()
+    level3_state.plane_state = Plane.from_dict(runtime._initial_plane_state())
+    level3_state.level = 3
+    runtime._advance_world(level3_state, runtime._tick_interval_seconds)
+    assert len(level3_state.tanks) >= 1
+    assert len(level3_state.jets) >= 1
 
 
 # ── Tank tests ────────────────────────────────────────────────────────────────

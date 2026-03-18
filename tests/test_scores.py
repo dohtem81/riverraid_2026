@@ -39,6 +39,9 @@ class _FakeScoresRepo:
         self.last_limit = limit
         return self.rows[:limit]
 
+    async def fetch_all_games(self) -> list[dict]:
+        return self.rows
+
 
 async def _repo_roundtrip() -> list[dict]:
     db_url = os.getenv("DATABASE_URL", "postgresql+asyncpg://riverraid:riverraid@db:5432/riverraid")
@@ -97,6 +100,36 @@ def test_scores_router_returns_repo_payload_and_uses_limit_10():
     assert response.status_code == 200
     assert response.json() == expected
     assert fake_repo.last_limit == 10
+
+
+def test_scores_router_all_games_returns_full_rows():
+    expected = [
+        {
+            "id": "row-1",
+            "pilot_name": "ace",
+            "score": 1200,
+            "level": 7,
+            "started_at": "2026-03-17T09:57:00+00:00",
+            "finished_at": "2026-03-17T10:00:00+00:00",
+        },
+        {
+            "id": "row-2",
+            "pilot_name": "rookie",
+            "score": 400,
+            "level": 3,
+            "started_at": "2026-03-17T09:50:00+00:00",
+            "finished_at": "2026-03-17T09:55:00+00:00",
+        },
+    ]
+    fake_repo = _FakeScoresRepo(expected)
+    app = FastAPI()
+    app.include_router(build_scores_router(fake_repo))
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/games")
+
+    assert response.status_code == 200
+    assert response.json() == expected
 
 
 def test_game_result_repository_roundtrip_returns_sorted_top_scores():

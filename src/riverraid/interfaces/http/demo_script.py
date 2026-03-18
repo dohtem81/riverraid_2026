@@ -232,6 +232,46 @@ function renderEntities() {
             continue;
         }
 
+        if (entity.kind === 'jet') {
+            const jpos = worldToCanvas(entity.x, entity.y + entity.height / 2);
+            const d = (Number(entity.direction) >= 0) ? 1 : -1;
+            ctx.save();
+            ctx.translate(jpos.x, jpos.y);
+            // Fuselage
+            ctx.fillStyle = '#cfd8dc';
+            ctx.fillRect(-14, -4, 28, 8);
+            // Nose cone
+            ctx.fillStyle = '#90a4ae';
+            ctx.beginPath();
+            ctx.moveTo(d * 14, 0);
+            ctx.lineTo(d * 22, -3);
+            ctx.lineTo(d * 22, 3);
+            ctx.closePath();
+            ctx.fill();
+            // Tail
+            ctx.fillStyle = '#78909c';
+            ctx.fillRect(-d * 16 - 2, -3, 4, 6);
+            // Wings
+            ctx.fillStyle = '#b0bec5';
+            ctx.beginPath();
+            ctx.moveTo(-6, 0);
+            ctx.lineTo(0, -8);
+            ctx.lineTo(6, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(-6, 0);
+            ctx.lineTo(0, 8);
+            ctx.lineTo(6, 0);
+            ctx.closePath();
+            ctx.fill();
+            // Cockpit highlight
+            ctx.fillStyle = '#81d4fa';
+            ctx.fillRect(d * 3 - 3, -2, 6, 4);
+            ctx.restore();
+            continue;
+        }
+
         if (entity.kind === 'tank') {
             const tscale = canvas.width / worldWidth;
             const tpos = worldToCanvas(entity.x, entity.y);
@@ -409,7 +449,7 @@ async function connect() {
                     restartBtn.disabled = true;
                     setStatus('Game restarted. Use Left/Right arrow keys to move, Space to fire.');
                 }
-                const crashEvents = ['collision_bank', 'collision_bridge', 'crash_fuel', 'collision_helicopter', 'collision_tank_missile'];
+                const crashEvents = ['collision_bank', 'collision_bridge', 'crash_fuel', 'collision_helicopter', 'collision_tank_missile', 'collision_jet'];
                 if (crashEvents.includes(msg.payload.event_type) && msg.payload.data) {
                     if (typeof msg.payload.data.respawn_camera_y === 'number') {
                         cameraY = msg.payload.data.respawn_camera_y;

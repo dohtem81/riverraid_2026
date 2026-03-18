@@ -61,3 +61,28 @@ class GameResultRepository:
                 }
                 for r in rows
             ]
+
+    async def fetch_all_games(self) -> list[dict]:
+        """Return all recorded games ordered by finish time descending."""
+        session_factory = database._session_factory
+        if session_factory is None:
+            raise RuntimeError("Database not initialised – call setup_engine() first")
+
+        async with session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(GameResult)
+                    .order_by(GameResult.finished_at.desc())
+                )
+            ).scalars().all()
+            return [
+                {
+                    "id": r.id,
+                    "pilot_name": r.pilot_name,
+                    "score": r.score,
+                    "level": r.level,
+                    "started_at": r.started_at.isoformat(),
+                    "finished_at": r.finished_at.isoformat(),
+                }
+                for r in rows
+            ]

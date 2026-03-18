@@ -87,4 +87,8 @@ def build_scores_router(repo: GameResultRepositoryPort) -> APIRouter:
     async def top_scores() -> list[dict]:
         return await repo.fetch_top_scores(limit=10)
 
+    @router.get("/games")
+    async def all_games() -> list[dict]:
+        return await repo.fetch_all_games()
+
     return router

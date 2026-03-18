@@ -9,8 +9,9 @@ Deliver a playable single-player prototype where the player can:
 3. Fly through procedurally generated river segments.
 4. Avoid river bank, bridge, and helicopter collisions.
 5. Dodge tank missiles fired from the banks.
-6. Refuel from fuel stations and fire missiles.
-7. Destroy helicopters, tanks, and bridges for score.
+6. Avoid fast horizontal jet passes across the river.
+7. Refuel from fuel stations and fire missiles.
+8. Destroy helicopters, tanks, and bridges for score.
 
 ## Included in MVP
 
@@ -23,7 +24,9 @@ Deliver a playable single-player prototype where the player can:
 - Collision-based score gain (fuel station +10, bridge +20, helicopter +10, tank +30).
 - Bridge spawning and bridge collision damage.
 - Helicopter enemies patrolling laterally within river bounds.
-- Tank enemies on river banks that shoot horizontal missiles every 2 s.
+- Tank enemies on river banks that shoot horizontal missiles every 2 s (unlock at level 2).
+- Fast jet enemies that cross horizontally from one edge to the opposite edge (unlock at level 3).
+- Enemy spawn frequency scaling: +10% per level (denser spawns as level increases).
 - Game over + restart command flow.
 
 ### Input Model
