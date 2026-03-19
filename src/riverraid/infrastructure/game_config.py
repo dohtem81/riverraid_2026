@@ -30,6 +30,8 @@ class GameConfig:
     # ── Plane ─────────────────────────────────────────────────────────────────
     plane_half_width: float
     step_x: float
+    high_speed_multiplier: float
+    low_speed_multiplier: float
     plane_offset_from_camera: float
 
     # ── Fuel ──────────────────────────────────────────────────────────────────
@@ -56,6 +58,11 @@ class GameConfig:
     helicopter_height: float
     helicopter_min_spacing: float
     helicopter_score: int
+    # ── Jets ─────────────────────────────────────────────────────────────────
+    jet_speed: float
+    jet_width: float
+    jet_height: float
+    jet_min_spacing: float
     # ── Tanks ─────────────────────────────────────────────────────────────────
     tank_width: float
     tank_height: float
@@ -110,6 +117,8 @@ def load_game_config(path: Path | None = None) -> GameConfig:
         # Plane
         plane_half_width=plane_half_width,
         step_x=float(raw["step_x"]),
+        high_speed_multiplier=float(raw.get("high_speed_multiplier", 1.2)),
+        low_speed_multiplier=float(raw.get("low_speed_multiplier", 0.8)),
         plane_offset_from_camera=float(raw["plane_offset_from_camera"]),
         # Fuel
         fuel_burn_per_second=float(raw["fuel_burn_per_second"]),
@@ -131,6 +140,11 @@ def load_game_config(path: Path | None = None) -> GameConfig:
         helicopter_height=float(raw["helicopter_height"]),
         helicopter_min_spacing=float(raw["helicopter_min_spacing"]),
         helicopter_score=int(raw["helicopter_score"]),
+        # Jets
+        jet_speed=float(raw.get("jet_speed", 260.0)),
+        jet_width=float(raw.get("jet_width", 44.0)),
+        jet_height=float(raw.get("jet_height", 16.0)),
+        jet_min_spacing=float(raw.get("jet_min_spacing", 520.0)),
         # Tanks
         tank_width=float(raw["tank_width"]),
         tank_height=float(raw["tank_height"]),

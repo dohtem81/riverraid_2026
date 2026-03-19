@@ -272,6 +272,7 @@ class GameSessionService:
     def all_entities_in_view(
         self, fuel_stations: list[dict], missiles: list[dict], bridges: list[dict],
         camera_y: float, helicopters: list[dict] | None = None,
+        jets: list[dict] | None = None,
         tanks: list[dict] | None = None, tank_missiles: list[dict] | None = None,
     ) -> list[dict]:
         c = self._cfg
@@ -289,7 +290,13 @@ class GameSessionService:
             heli_max_y = camera_y + c.viewport_height + c.helicopter_height
             for heli in helicopters:
                 if not heli.get("destroyed") and heli["y"] + heli["height"] >= heli_min_y and heli["y"] <= heli_max_y:
-                    entities.append({"id": heli["id"], "kind": "helicopter", "x": heli["x"], "y": heli["y"], "width": heli["width"], "height": heli["height"]})
+                    entities.append({"id": heli["id"], "kind": "helicopter", "x": heli["x"], "y": heli["y"], "width": heli["width"], "height": heli["height"], "direction": heli.get("direction", 1)})
+        if jets:
+            jet_min_y = camera_y - c.jet_height
+            jet_max_y = camera_y + c.viewport_height + c.jet_height
+            for jet in jets:
+                if jet["y"] + jet["height"] >= jet_min_y and jet["y"] <= jet_max_y:
+                    entities.append({"id": jet["id"], "kind": "jet", "x": jet["x"], "y": jet["y"], "width": jet["width"], "height": jet["height"], "direction": jet.get("direction", 1)})
         if tanks:
             for tank in tanks:
                 if not tank.get("destroyed") and tank["y"] + tank["height"] >= camera_y - c.tank_height and tank["y"] <= camera_y + c.viewport_height + c.tank_height:
@@ -348,15 +355,17 @@ class GameSessionService:
         next_helicopter_y: float,
         river_banks: list[dict],
         target_y: float,
+        spawn_multiplier: float = 1.0,
     ) -> tuple[list[dict], int, float]:
         c = self._cfg
+        effective_spacing = c.helicopter_min_spacing / max(0.1, spawn_multiplier)
         while next_helicopter_y <= target_y:
-            heli_y = next_helicopter_y + random.uniform(c.helicopter_min_spacing * 0.3, c.helicopter_min_spacing)
+            heli_y = next_helicopter_y + random.uniform(effective_spacing * 0.3, effective_spacing)
             if heli_y > target_y:
                 break
             left_x, right_x = self.bank_bounds_at_y(river_banks=river_banks, y=heli_y)
             if (right_x - left_x) < c.helicopter_width * 2:
-                next_helicopter_y = heli_y + c.helicopter_min_spacing
+                next_helicopter_y = heli_y + effective_spacing
                 continue
             half_w = c.helicopter_width / 2
             left_bound = left_x + half_w
@@ -375,7 +384,7 @@ class GameSessionService:
                 "right_bound": round(right_bound, 2),
             })
             next_helicopter_id += 1
-            next_helicopter_y = heli_y + c.helicopter_min_spacing
+            next_helicopter_y = heli_y + effective_spacing
         return helicopters, next_helicopter_id, next_helicopter_y
 
     @staticmethod
@@ -414,6 +423,86 @@ class GameSessionService:
                 return {"event_type": "collision_helicopter", "data": self._apply_plane_hit(plane_state)}
         return None
 
+    def ensure_jets_until(
+        self,
+        jets: list[dict],
+        next_jet_id: int,
+        next_jet_y: float,
+        river_banks: list[dict],
+        target_y: float,
+        spawn_multiplier: float = 1.0,
+    ) -> tuple[list[dict], int, float]:
+        c = self._cfg
+        effective_spacing = c.jet_min_spacing / max(0.1, spawn_multiplier)
+        while next_jet_y <= target_y:
+            jet_y = next_jet_y + random.uniform(effective_spacing * 0.35, effective_spacing)
+            if jet_y > target_y:
+                break
+            left_x, right_x = self.bank_bounds_at_y(river_banks=river_banks, y=jet_y)
+            if (right_x - left_x) < c.jet_width * 1.8:
+                next_jet_y = jet_y + effective_spacing
+                continue
+            half_w = c.jet_width / 2
+            side = random.choice(["left", "right"])
+            direction = 1 if side == "left" else -1
+            # Jets spawn at the far screen edge and cross all the way through.
+            start_x = -half_w if direction == 1 else c.world_width + half_w
+            jets.append(
+                {
+                    "id": f"jet_{next_jet_id}",
+                    "x": round(start_x, 2),
+                    "y": round(jet_y, 2),
+                    "width": c.jet_width,
+                    "height": c.jet_height,
+                    "speed": c.jet_speed,
+                    "direction": direction,
+                    "left_bound": round(-half_w, 2),
+                    "right_bound": round(c.world_width + half_w, 2),
+                }
+            )
+            next_jet_id += 1
+            next_jet_y = jet_y + effective_spacing
+        return jets, next_jet_id, next_jet_y
+
+    @staticmethod
+    def advance_jets(jets: list[dict], elapsed_seconds: float) -> None:
+        for jet in jets:
+            speed = jet.get("speed", 260.0)
+            jet["x"] += speed * jet["direction"] * elapsed_seconds
+
+    def prune_old_jets(self, jets: list[dict], camera_y: float) -> list[dict]:
+        c = self._cfg
+        min_y = camera_y - c.jet_height
+        kept: list[dict] = []
+        for jet in jets:
+            if jet["y"] + jet["height"] < min_y:
+                continue
+            half_w = float(jet["width"]) / 2
+            if int(jet.get("direction", 1)) > 0:
+                # Moving right: despawn after fully leaving right side.
+                if float(jet["x"]) - half_w > c.world_width:
+                    continue
+            else:
+                # Moving left: despawn after fully leaving left side.
+                if float(jet["x"]) + half_w < 0.0:
+                    continue
+            kept.append(jet)
+        return kept
+
+    def handle_jet_collision(self, plane_state: dict, jets: list[dict]) -> dict | None:
+        c = self._cfg
+        plane_x = float(plane_state["x"])
+        plane_y = float(plane_state["y"])
+        for jet in jets:
+            j_left = float(jet["x"]) - float(jet["width"]) / 2
+            j_right = float(jet["x"]) + float(jet["width"]) / 2
+            j_bottom = float(jet["y"])
+            j_top = j_bottom + float(jet["height"])
+            x_hit = (plane_x + c.plane_half_width) >= j_left and (plane_x - c.plane_half_width) <= j_right
+            if x_hit and j_bottom <= plane_y <= j_top:
+                return {"event_type": "collision_jet", "data": self._apply_plane_hit(plane_state)}
+        return None
+
     @staticmethod
     def bank_bounds_at_y(river_banks: list[dict], y: float) -> tuple[float, float]:
         if not river_banks:
@@ -430,10 +519,12 @@ class GameSessionService:
         next_tank_y: float,
         river_banks: list[dict],
         target_y: float,
+        spawn_multiplier: float = 1.0,
     ) -> tuple[list[dict], int, float]:
         c = self._cfg
+        effective_spacing = c.tank_min_spacing / max(0.1, spawn_multiplier)
         while next_tank_y <= target_y:
-            tank_y = next_tank_y + random.uniform(c.tank_min_spacing * 0.5, c.tank_min_spacing)
+            tank_y = next_tank_y + random.uniform(effective_spacing * 0.5, effective_spacing)
             if tank_y > target_y:
                 break
             left_x, right_x = self.bank_bounds_at_y(river_banks=river_banks, y=tank_y)
@@ -454,7 +545,7 @@ class GameSessionService:
                 "destroyed": False,
             })
             next_tank_id += 1
-            next_tank_y = tank_y + c.tank_min_spacing
+            next_tank_y = tank_y + effective_spacing
         return tanks, next_tank_id, next_tank_y
 
     def maybe_fire_from_tanks(

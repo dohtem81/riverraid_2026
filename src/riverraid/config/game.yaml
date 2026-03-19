@@ -53,6 +53,14 @@ plane_half_width: 8.0
 # Horizontal movement in game-units applied per left/right input event.
 step_x: 5.0
 
+# Horizontal speed multiplier while ArrowUp is held.
+# 1.2 means 20% faster than normal movement speed.
+high_speed_multiplier: 1.5
+
+# Horizontal speed multiplier while ArrowDown is held.
+# 0.8 means 20% slower than normal movement speed.
+low_speed_multiplier: 0.5
+
 # How far above the bottom of the viewport the plane is drawn / positioned.
 # A larger value gives the player more look-ahead below the plane.
 plane_offset_from_camera: 60.0
@@ -119,6 +127,18 @@ helicopter_min_spacing: 250.0
 
 # Score awarded for destroying a helicopter with a missile.
 helicopter_score: 10
+
+# ── Jets ─────────────────────────────────────────────────────────────────────
+
+# Fast horizontal jet speed (game-units/s).
+jet_speed: 260.0
+
+# Jet collision box dimensions.
+jet_width: 44.0
+jet_height: 16.0
+
+# Minimum vertical spacing between consecutive jets.
+jet_min_spacing: 520.0
 
 # ── Tanks ───────────────────────────────────────────────────────────────
 

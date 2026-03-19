@@ -14,6 +14,7 @@ from riverraid.infrastructure.config_credential_provider import ConfigCredential
 from riverraid.infrastructure.jwt_token_service import JwtTokenService
 from riverraid.infrastructure.settings import load_settings
 from riverraid.interfaces.http.demo_page import INDEX_HTML
+from riverraid.interfaces.http.games_page import GAMES_HTML
 from riverraid.interfaces.http.routes import build_auth_router, build_scores_router
 from riverraid.interfaces.ws.gateway import WebSocketGateway
 
@@ -68,6 +69,10 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
         return INDEX_HTML
+
+    @app.get("/games", response_class=HTMLResponse)
+    def games_page() -> str:
+        return GAMES_HTML
 
     @app.get("/healthz")
     def healthz() -> dict:

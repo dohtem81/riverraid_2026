@@ -309,6 +309,9 @@ class WebSocketGateway:
     def _handle_helicopter_collision(self, plane_state: dict, helicopters: list[dict]) -> dict | None:
         return self._runtime._handle_helicopter_collision(plane_state=plane_state, helicopters=helicopters)
 
+    def _handle_jet_collision(self, plane_state: dict, jets: list[dict]) -> dict | None:
+        return self._runtime._handle_jet_collision(plane_state=plane_state, jets=jets)
+
     def _handle_bridge_collision(self, plane_state: dict, bridges: list[dict]) -> dict | None:
         return self._runtime._handle_bridge_collision(plane_state=plane_state, bridges=bridges)
 
@@ -347,12 +350,14 @@ class WebSocketGateway:
         bridges: list[dict],
         camera_y: float,
         helicopters: list[dict] | None = None,
+        jets: list[dict] | None = None,
     ) -> list[dict]:
         return self._runtime._all_entities_in_view(
             fuel_stations=fuel_stations,
             missiles=missiles,
             bridges=bridges,
             helicopters=helicopters,
+            jets=jets,
             camera_y=camera_y,
         )
 
@@ -407,12 +412,35 @@ class WebSocketGateway:
             target_y=target_y,
         )
 
+    def _ensure_jets_until(
+        self,
+        jets: list[dict],
+        next_jet_id: int,
+        next_jet_y: float,
+        river_banks: list[dict],
+        target_y: float,
+    ) -> tuple[list[dict], int, float]:
+        return self._runtime._ensure_jets_until(
+            jets=jets,
+            next_jet_id=next_jet_id,
+            next_jet_y=next_jet_y,
+            river_banks=river_banks,
+            target_y=target_y,
+        )
+
     @staticmethod
     def _advance_helicopters(helicopters: list[dict], elapsed_seconds: float) -> None:
         SessionRuntime._advance_helicopters(helicopters=helicopters, elapsed_seconds=elapsed_seconds)
 
+    @staticmethod
+    def _advance_jets(jets: list[dict], elapsed_seconds: float) -> None:
+        SessionRuntime._advance_jets(jets=jets, elapsed_seconds=elapsed_seconds)
+
     def _prune_old_helicopters(self, helicopters: list[dict], camera_y: float) -> list[dict]:
         return self._runtime._prune_old_helicopters(helicopters=helicopters, camera_y=camera_y)
+
+    def _prune_old_jets(self, jets: list[dict], camera_y: float) -> list[dict]:
+        return self._runtime._prune_old_jets(jets=jets, camera_y=camera_y)
 
     def _initial_plane_state(self) -> dict:
         return self._runtime._initial_plane_state()

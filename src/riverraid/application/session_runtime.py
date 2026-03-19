@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from riverraid.application.session_entities import Bridge, FuelStation, Helicopter, Missile, Plane, RiverBank, Tank
+from riverraid.application.session_entities import Bridge, FuelStation, Helicopter, Jet, Missile, Plane, RiverBank, Tank
 from riverraid.application.game_session_service import GameSessionService
 from riverraid.infrastructure.game_config import GameConfig, load_game_config
 
@@ -24,6 +24,9 @@ class SessionState:
     helicopters: list[Helicopter] = field(default_factory=list)
     next_helicopter_id: int = 1
     next_helicopter_y: float = 0.0
+    jets: list[Jet] = field(default_factory=list)
+    next_jet_id: int = 1
+    next_jet_y: float = 0.0
     tanks: list[Tank] = field(default_factory=list)
     next_tank_id: int = 1
     next_tank_y: float = 0.0
@@ -87,6 +90,7 @@ class SessionRuntime:
         missiles = [missile.to_dict() for missile in g.missiles]
         bridges = [bridge.to_dict() for bridge in g.bridges]
         helicopters = [helicopter.to_dict() for helicopter in g.helicopters]
+        jets = [jet.to_dict() for jet in g.jets]
         tanks = [tank.to_dict() for tank in g.tanks]
         missiles = self._advance_missiles_and_check_collisions(
             missiles=missiles,
@@ -101,6 +105,7 @@ class SessionRuntime:
         g.fuel_stations = [FuelStation.from_dict(station) for station in fuel_stations]
         g.bridges = [Bridge.from_dict(bridge) for bridge in bridges]
         g.helicopters = [Helicopter.from_dict(helicopter) for helicopter in helicopters]
+        g.jets = [Jet.from_dict(jet) for jet in jets]
         g.tanks = [Tank.from_dict(tank) for tank in tanks]
         missiles = self._session.prune_old_missiles(missiles=missiles, camera_y=g.camera_y)
         g.missiles = [Missile.from_dict(missile) for missile in missiles]
@@ -135,14 +140,17 @@ class SessionRuntime:
         river_banks = [segment.to_dict() for segment in g.river_banks]
         bridges = [bridge.to_dict() for bridge in g.bridges]
         helicopters = [helicopter.to_dict() for helicopter in g.helicopters]
+        jets = [jet.to_dict() for jet in g.jets]
 
         for coll_event in [
             self._handle_bank_collision(plane_state=plane_state, river_banks=river_banks),
             self._handle_bridge_collision(plane_state=plane_state, bridges=bridges),
             self._handle_helicopter_collision(plane_state=plane_state, helicopters=helicopters),
+            self._handle_jet_collision(plane_state=plane_state, jets=jets),
         ]:
             g.plane_state = Plane.from_dict(plane_state)
             g.helicopters = [Helicopter.from_dict(helicopter) for helicopter in helicopters]
+            g.jets = [Jet.from_dict(jet) for jet in jets]
             if coll_event is None:
                 continue
             if g.plane_state.hp > 0:
@@ -181,6 +189,7 @@ class SessionRuntime:
                 missiles=[missile.to_dict() for missile in g.missiles],
                 bridges=[bridge.to_dict() for bridge in g.bridges],
                 helicopters=[helicopter.to_dict() for helicopter in g.helicopters],
+                jets=[jet.to_dict() for jet in g.jets],
                 tanks=[tank.to_dict() for tank in g.tanks],
                 tank_missiles=[tm.to_dict() for tm in g.tank_missiles],
                 camera_y=g.camera_y,
@@ -196,7 +205,12 @@ class SessionRuntime:
 
     def _advance_world(self, g: SessionState, elapsed: float) -> None:
         g.game_time += elapsed
-        g.camera_y += self._scroll_speed * elapsed
+        speed_multiplier = 1.0
+        if "up" in g.keys_down and "down" not in g.keys_down:
+            speed_multiplier = self._high_speed_multiplier
+        elif "down" in g.keys_down and "up" not in g.keys_down:
+            speed_multiplier = self._low_speed_multiplier
+        g.camera_y += self._scroll_speed * speed_multiplier * elapsed
         if g.plane_state is None:
             raise RuntimeError("Plane state is not initialized")
         move_speed = self._step_x / self._tick_interval_seconds if self._tick_interval_seconds > 0 else self._step_x
@@ -233,6 +247,7 @@ class SessionRuntime:
             target_y=gen_target,
         )
         bridges = self._session.prune_old_bridges(bridges=bridges, camera_y=g.camera_y)
+        enemy_spawn_multiplier = self._enemy_spawn_multiplier(g.level)
         helicopters = [helicopter.to_dict() for helicopter in g.helicopters]
         helicopters, g.next_helicopter_id, g.next_helicopter_y = self._session.ensure_helicopters_until(
             helicopters=helicopters,
@@ -240,28 +255,52 @@ class SessionRuntime:
             next_helicopter_y=g.next_helicopter_y,
             river_banks=river_banks,
             target_y=gen_target,
+            spawn_multiplier=enemy_spawn_multiplier,
         )
         self._session.advance_helicopters(helicopters=helicopters, elapsed_seconds=elapsed)
         helicopters = self._session.prune_old_helicopters(helicopters=helicopters, camera_y=g.camera_y)
+        jets = [jet.to_dict() for jet in g.jets]
+        if g.level >= 3:
+            jets, g.next_jet_id, g.next_jet_y = self._session.ensure_jets_until(
+                jets=jets,
+                next_jet_id=g.next_jet_id,
+                next_jet_y=g.next_jet_y,
+                river_banks=river_banks,
+                target_y=gen_target,
+                spawn_multiplier=enemy_spawn_multiplier,
+            )
+        else:
+            g.next_jet_y = max(g.next_jet_y, gen_target)
+        self._session.advance_jets(jets=jets, elapsed_seconds=elapsed)
+        jets = self._session.prune_old_jets(jets=jets, camera_y=g.camera_y)
         g.river_banks = [RiverBank.from_dict(segment) for segment in river_banks]
         g.fuel_stations = [FuelStation.from_dict(station) for station in fuel_stations]
         g.bridges = [Bridge.from_dict(bridge) for bridge in bridges]
         g.helicopters = [Helicopter.from_dict(helicopter) for helicopter in helicopters]
+        g.jets = [Jet.from_dict(jet) for jet in jets]
         # Tank generation and pruning
         tanks = [tank.to_dict() for tank in g.tanks]
-        tanks, g.next_tank_id, g.next_tank_y = self._session.ensure_tanks_until(
-            tanks=tanks,
-            next_tank_id=g.next_tank_id,
-            next_tank_y=g.next_tank_y,
-            river_banks=river_banks,
-            target_y=gen_target,
-        )
+        if g.level >= 2:
+            tanks, g.next_tank_id, g.next_tank_y = self._session.ensure_tanks_until(
+                tanks=tanks,
+                next_tank_id=g.next_tank_id,
+                next_tank_y=g.next_tank_y,
+                river_banks=river_banks,
+                target_y=gen_target,
+                spawn_multiplier=enemy_spawn_multiplier,
+            )
+        else:
+            g.next_tank_y = max(g.next_tank_y, gen_target)
         tanks = self._session.prune_old_tanks(tanks=tanks, camera_y=g.camera_y)
         g.tanks = [Tank.from_dict(tank) for tank in tanks]
         while g.camera_y > g.next_level_bridge_y + self._bridge_height:
             g.last_crossed_bridge_y = g.next_level_bridge_y
             g.level += 1
             g.next_level_bridge_y += self._bridge_interval_y
+
+    @staticmethod
+    def _enemy_spawn_multiplier(level: int) -> float:
+        return 1.0 + (max(1, int(level)) - 1) * 0.1
 
     def _reset_world(self, g: SessionState) -> None:
         g.camera_y = 0.0
@@ -298,6 +337,9 @@ class SessionRuntime:
         g.helicopters = []
         g.next_helicopter_id = 1
         g.next_helicopter_y = 0.0
+        g.jets = []
+        g.next_jet_id = 1
+        g.next_jet_y = 0.0
         g.tanks = []
         g.tank_missiles = []
         g.next_tank_id = 1
@@ -335,6 +377,9 @@ class SessionRuntime:
 
     def _handle_helicopter_collision(self, plane_state: dict, helicopters: list[dict]) -> dict | None:
         return self._session.handle_helicopter_collision(plane_state=plane_state, helicopters=helicopters)
+
+    def _handle_jet_collision(self, plane_state: dict, jets: list[dict]) -> dict | None:
+        return self._session.handle_jet_collision(plane_state=plane_state, jets=jets)
 
     def _handle_bridge_collision(self, plane_state: dict, bridges: list[dict]) -> dict | None:
         return self._session.handle_bridge_collision(plane_state=plane_state, bridges=bridges)
@@ -376,12 +421,14 @@ class SessionRuntime:
         bridges: list[dict],
         camera_y: float,
         helicopters: list[dict] | None = None,
+        jets: list[dict] | None = None,
     ) -> list[dict]:
         return self._session.all_entities_in_view(
             fuel_stations=fuel_stations,
             missiles=missiles,
             bridges=bridges,
             helicopters=helicopters,
+            jets=jets,
             camera_y=camera_y,
         )
 
@@ -436,12 +483,35 @@ class SessionRuntime:
             target_y=target_y,
         )
 
+    def _ensure_jets_until(
+        self,
+        jets: list[dict],
+        next_jet_id: int,
+        next_jet_y: float,
+        river_banks: list[dict],
+        target_y: float,
+    ) -> tuple[list[dict], int, float]:
+        return self._session.ensure_jets_until(
+            jets=jets,
+            next_jet_id=next_jet_id,
+            next_jet_y=next_jet_y,
+            river_banks=river_banks,
+            target_y=target_y,
+        )
+
     @staticmethod
     def _advance_helicopters(helicopters: list[dict], elapsed_seconds: float) -> None:
         GameSessionService.advance_helicopters(helicopters=helicopters, elapsed_seconds=elapsed_seconds)
 
+    @staticmethod
+    def _advance_jets(jets: list[dict], elapsed_seconds: float) -> None:
+        GameSessionService.advance_jets(jets=jets, elapsed_seconds=elapsed_seconds)
+
     def _prune_old_helicopters(self, helicopters: list[dict], camera_y: float) -> list[dict]:
         return self._session.prune_old_helicopters(helicopters=helicopters, camera_y=camera_y)
+
+    def _prune_old_jets(self, jets: list[dict], camera_y: float) -> list[dict]:
+        return self._session.prune_old_jets(jets=jets, camera_y=camera_y)
 
     def _initial_plane_state(self) -> dict:
         return self._session.initial_plane_state()

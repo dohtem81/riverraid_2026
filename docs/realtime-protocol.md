@@ -234,8 +234,18 @@ Authoritative state snapshot.
 				"kind": "helicopter",
 				"x": 450.0,
 				"y": 680.0,
+				"direction": 1,
 				"width": 40.0,
 				"height": 20.0
+			},
+			{
+				"id": "jet_1",
+				"kind": "jet",
+				"x": -22.0,
+				"y": 720.0,
+				"direction": 1,
+				"width": 44.0,
+				"height": 16.0
 			},
 			{
 				"id": "tank_1",
@@ -286,6 +296,7 @@ Additional events used in current Phase 0:
 - `collision_bank` — plane touched a river bank; lives reduced.
 - `collision_bridge` — plane touched a bridge; lives reduced.
 - `collision_helicopter` — plane collided with a helicopter; lives reduced.
+- `collision_jet` — plane collided with a fast horizontal jet; lives reduced.
 - `collision_tank_missile` — a tank missile hit the plane; lives reduced.
 - `crash_fuel` — fuel reached 0; life reduced and crash applied.
 - `game_over` — lives reached 0; gameplay simulation paused.
@@ -333,6 +344,7 @@ Additional events used in current Phase 0:
 - Event messages are sent immediately after tick resolution.
 - River banks are generated on join and included in every snapshot for rendering.
 - Camera advances forward at constant speed; map scrolls downward on screen as `camera_y` increases.
+- Holding `ArrowUp` increases camera advance speed; holding `ArrowDown` decreases camera advance speed (configurable multipliers).
 - New river bank segments are generated as `camera_y` approaches unseen ranges.
 - River width is variable per segment: max width `420`, min width `144` (`9 x plane width`).
 
@@ -352,7 +364,7 @@ When plane intersects river bank bounds, server emits:
 }
 ```
 
-Same structure for `collision_bridge`, `collision_helicopter`, and `collision_tank_missile`.
+Same structure for `collision_bridge`, `collision_helicopter`, `collision_jet`, and `collision_tank_missile`.
 All collision events include `data.hp` (remaining lives) and, on fatal hits, `data.respawn_camera_y`.
 
 ## Missile Rules
@@ -365,11 +377,24 @@ All collision events include `data.hp` (remaining lives) and, on fatal hits, `da
 
 ## Tank Behaviour
 
-- Tanks spawn on the river bank edge (left or right side) at random intervals.
+- Tanks unlock from level `2` onward and spawn on the river bank edge (left or right side).
 - Every `tank_shoot_interval_seconds` (default: `2.0 s`) a tank fires a horizontal missile across the river.
 - Left-bank tanks fire right; right-bank tanks fire left.
 - Tank missiles travel at `tank_missile_speed_x` (default: `200` game-units/s) and are pruned when they exit world bounds.
 - A player missile that overlaps a tank destroys it and awards `tank_score` (default: +30) points.
+
+## Jet Behaviour
+
+- Jets unlock from level `3` onward.
+- Jets spawn at the far left or far right edge of the screen and move horizontally across the full field.
+- Jets do not bounce; they despawn after fully leaving the opposite side of the field.
+- Jet collisions trigger `collision_jet` and remove one life.
+
+## Level Scaling
+
+- Enemy spawn frequency scales by level: `+10%` per level.
+- Effective multiplier: `1.0 + (level - 1) * 0.1`.
+- This scaling is applied to helicopter, tank, and jet spawn spacing (higher level => denser enemies).
 
 ## Game Over Behavior
 
@@ -379,7 +404,7 @@ All collision events include `data.hp` (remaining lives) and, on fatal hits, `da
 - Fuel stations spawn randomly within river bounds with minimum spacing of 8 seconds of flight.
 - Fuel station dimensions: width equals plane width, height only tall enough to cover the vertical `FUEL` letters.
 - At fuel `0`, server triggers a crash (`crash_fuel`) and subtracts one life.
-- Each bank, bridge, helicopter collision, or tank missile hit subtracts `1` life.
+- Each bank, bridge, helicopter collision, jet collision, or tank missile hit subtracts `1` life.
 - At `0` lives, server emits `game_over` and ignores movement input (`error.code=GAME_OVER`).
 - Client can send `restart` command; server resets state and emits `game_restarted` plus fresh snapshot.
 

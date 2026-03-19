@@ -71,9 +71,13 @@ Architecture fitness checks:
 - Snapshot broadcast: **~10 Hz** (plus immediate snapshots after accepted input events).
 - Client sends **key-state commands** (`keydown`/`keyup`) or legacy `input` commands.
 - Server maintains a `keys_down` set per session; movement is applied continuously each tick at `step_x / tick_interval_seconds` game-units/s.
+- Holding `ArrowUp` / `ArrowDown` adjusts forward camera speed via configurable high/low speed multipliers.
 - Server applies validated inputs at tick boundaries and returns snapshots with `last_processed_input_seq` for reconciliation.
 - Player missiles: travel upward at `missile_speed`; lifetime `2 s`; cooldown `0.5 s`.
 - Tank missiles: travel horizontally at `tank_missile_speed_x`; fired every `2 s` per tank; pruned on world-edge exit.
+- Fast jet hazards: move horizontally edge-to-edge and despawn after leaving the opposite side.
+- Enemy progression gates: tanks unlock at level 2, jets unlock at level 3.
+- Enemy spawn frequency scales by level (`+10%` per level via reduced spawn spacing).
 
 ## Backend Responsibilities
 

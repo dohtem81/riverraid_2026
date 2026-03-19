@@ -204,6 +204,46 @@ class Helicopter(BaseSessionEntity):
 
 
 @dataclass
+class Jet(BaseSessionEntity):
+    id: str
+    x: float
+    y: float
+    width: float
+    height: float
+    speed: float
+    direction: int
+    left_bound: float
+    right_bound: float
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Jet":
+        return cls(
+            id=str(data["id"]),
+            x=float(data["x"]),
+            y=float(data["y"]),
+            width=float(data["width"]),
+            height=float(data["height"]),
+            speed=float(data["speed"]),
+            direction=int(data["direction"]),
+            left_bound=float(data["left_bound"]),
+            right_bound=float(data["right_bound"]),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "x": self.x,
+            "y": self.y,
+            "width": self.width,
+            "height": self.height,
+            "speed": self.speed,
+            "direction": self.direction,
+            "left_bound": self.left_bound,
+            "right_bound": self.right_bound,
+        }
+
+
+@dataclass
 class Tank(BaseSessionEntity):
     id: str
     x: float
