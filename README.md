@@ -4,6 +4,8 @@
 
 Server-authoritative River Raid prototype built with FastAPI, WebSocket gameplay, JWT-based session join, and PostgreSQL-backed finished-game persistence.
 
+Try it online: https://riverraid-2026.onrender.com/
+
 ## Features
 
 - Name-only login flow
