@@ -6,6 +6,14 @@ Server-authoritative River Raid prototype built with FastAPI, WebSocket gameplay
 
 Try it online: https://riverraid-2026.onrender.com/
 
+## Architecture (Key Idea)
+
+- Server runs the entire game simulation (authoritative state)
+- Client is a thin WebSocket renderer (no game logic)
+- State is streamed in real-time to the browser
+
+This design enables deterministic gameplay, persistence, and future multiplayer support.
+
 ## Features
 
 - Name-only login flow
