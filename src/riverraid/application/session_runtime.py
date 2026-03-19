@@ -170,6 +170,7 @@ class SessionRuntime:
             "render_config": {
                 "world_width": self._world_width,
                 "viewport_height": self._viewport_height,
+                "land_decoration_coverage": self._land_decoration_coverage,
             },
         }
 
@@ -256,6 +257,7 @@ class SessionRuntime:
             river_banks=river_banks,
             target_y=gen_target,
             spawn_multiplier=enemy_spawn_multiplier,
+            level=g.level,
         )
         self._session.advance_helicopters(helicopters=helicopters, elapsed_seconds=elapsed)
         helicopters = self._session.prune_old_helicopters(helicopters=helicopters, camera_y=g.camera_y)
@@ -474,6 +476,8 @@ class SessionRuntime:
         next_helicopter_y: float,
         river_banks: list[dict],
         target_y: float,
+        spawn_multiplier: float = 1.0,
+        level: int = 1,
     ) -> tuple[list[dict], int, float]:
         return self._session.ensure_helicopters_until(
             helicopters=helicopters,
@@ -481,6 +485,8 @@ class SessionRuntime:
             next_helicopter_y=next_helicopter_y,
             river_banks=river_banks,
             target_y=target_y,
+            spawn_multiplier=spawn_multiplier,
+            level=level,
         )
 
     def _ensure_jets_until(

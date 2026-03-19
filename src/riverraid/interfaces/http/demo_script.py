@@ -16,6 +16,11 @@ let cameraY = 0;
 let ws = null;
 let inputSeq = 0;
 let isGameOver = false;
+let decoratedSegmentCount = 0;
+let decorationSourceSignature = '';
+let landDecorationCoverage = 0.20;
+const LAND_DECORATION_MARGIN = 8;
+const landDecorations = [];
 const pressedKeys = new Set();
 
 restartBtn.disabled = true;
@@ -32,6 +37,7 @@ function worldToCanvas(x, y) {
 function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     renderRiverBanks();
+    renderLandDecorations();
     renderEntities();
     if (!plane) {
         requestAnimationFrame(render);
@@ -119,6 +125,8 @@ function renderRiverBanks() {
     const viewportTop = cameraY;
 
     ctx.fillStyle = '#2d7f3b';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 5;
     for (let i = 0; i < riverBanks.length - 1; i += 1) {
         const a = riverBanks[i];
         const b = riverBanks[i + 1];
@@ -147,6 +155,240 @@ function renderRiverBanks() {
         ctx.lineTo(canvas.width, ay);
         ctx.lineTo(canvas.width, by);
         ctx.lineTo(bRight, by);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.moveTo(aLeft, ay);
+        ctx.lineTo(bLeft, by);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(aRight, ay);
+        ctx.lineTo(bRight, by);
+        ctx.stroke();
+    }
+}
+
+function makeRng(seed) {
+    let t = seed >>> 0;
+    return () => {
+        t += 0x6D2B79F5;
+        let r = Math.imul(t ^ (t >>> 15), t | 1);
+        r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
+        return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+function hashSeed(a, b, sideTag) {
+    const ay = Math.round(a.y * 10);
+    const by = Math.round(b.y * 10);
+    const al = Math.round(a.left_x * 10);
+    const bl = Math.round(b.left_x * 10);
+    const ar = Math.round(a.right_x * 10);
+    const br = Math.round(b.right_x * 10);
+    let h = 2166136261;
+    h ^= ay; h = Math.imul(h, 16777619);
+    h ^= by; h = Math.imul(h, 16777619);
+    h ^= al; h = Math.imul(h, 16777619);
+    h ^= bl; h = Math.imul(h, 16777619);
+    h ^= ar; h = Math.imul(h, 16777619);
+    h ^= br; h = Math.imul(h, 16777619);
+    h ^= sideTag; h = Math.imul(h, 16777619);
+    return h >>> 0;
+}
+
+function clamp01(value) {
+    return Math.max(0, Math.min(1, value));
+}
+
+function pickDecorationType(rng) {
+    const v = rng();
+    if (v < 0.36) {
+        return 'tree';
+    }
+    if (v < 0.76) {
+        return 'bush';
+    }
+    return 'rock';
+}
+
+function createDecoration(type, x, y, rng) {
+    if (type === 'tree') {
+        const canopyRadius = 7 + rng() * 6;
+        return {
+            kind: 'tree',
+            x,
+            y,
+            size: canopyRadius,
+            tone: 0.75 + rng() * 0.35,
+            area: Math.PI * canopyRadius * canopyRadius,
+        };
+    }
+    if (type === 'bush') {
+        const radius = 4 + rng() * 5;
+        return {
+            kind: 'bush',
+            x,
+            y,
+            size: radius,
+            tone: 0.8 + rng() * 0.25,
+            area: Math.PI * radius * radius,
+        };
+    }
+
+    const radius = 4 + rng() * 5;
+    return {
+        kind: 'rock',
+        x,
+        y,
+        size: radius,
+        tone: 0.75 + rng() * 0.4,
+        area: Math.PI * radius * radius,
+    };
+}
+
+function addDecorationsForSegment(a, b, side) {
+    const segmentHeight = Math.abs(b.y - a.y);
+    if (segmentHeight <= 0.1) {
+        return;
+    }
+
+    const isLeft = side === 'left';
+    const widthA = isLeft ? Math.max(0, a.left_x) : Math.max(0, worldWidth - a.right_x);
+    const widthB = isLeft ? Math.max(0, b.left_x) : Math.max(0, worldWidth - b.right_x);
+    const avgWidth = (widthA + widthB) / 2;
+    const landArea = avgWidth * segmentHeight;
+    if (landArea < 80) {
+        return;
+    }
+
+    const targetCoveredArea = landArea * clamp01(landDecorationCoverage);
+    const rng = makeRng(hashSeed(a, b, isLeft ? 17 : 29));
+    let coveredArea = 0;
+    let attempts = 0;
+    while (coveredArea < targetCoveredArea && attempts < 120) {
+        attempts += 1;
+        const t = rng();
+        const y = a.y + (b.y - a.y) * t;
+        const leftEdge = a.left_x + (b.left_x - a.left_x) * t;
+        const rightEdge = a.right_x + (b.right_x - a.right_x) * t;
+
+        let x = 0;
+        if (isLeft) {
+            const maxX = leftEdge - LAND_DECORATION_MARGIN;
+            if (maxX <= 2) {
+                continue;
+            }
+            x = 2 + (rng() * Math.max(0.1, maxX - 2));
+        } else {
+            const minX = rightEdge + LAND_DECORATION_MARGIN;
+            if (minX >= worldWidth - 2) {
+                continue;
+            }
+            x = minX + (rng() * Math.max(0.1, worldWidth - 2 - minX));
+        }
+
+        const kind = pickDecorationType(rng);
+        const decoration = createDecoration(kind, x, y, rng);
+        landDecorations.push(decoration);
+        coveredArea += decoration.area;
+    }
+}
+
+function syncLandDecorationsToBanks(forceReset = false) {
+    if (!Array.isArray(riverBanks) || riverBanks.length < 2) {
+        landDecorations.length = 0;
+        decoratedSegmentCount = 0;
+        decorationSourceSignature = '';
+        return;
+    }
+
+    const first = riverBanks[0];
+    const sourceSignature = [
+        worldWidth.toFixed(2),
+        landDecorationCoverage.toFixed(3),
+        first.y.toFixed(2),
+        first.left_x.toFixed(2),
+        first.right_x.toFixed(2),
+    ].join('|');
+
+    if (forceReset || sourceSignature !== decorationSourceSignature || decoratedSegmentCount > riverBanks.length - 1) {
+        landDecorations.length = 0;
+        decoratedSegmentCount = 0;
+        decorationSourceSignature = sourceSignature;
+    }
+
+    while (decoratedSegmentCount < riverBanks.length - 1) {
+        const a = riverBanks[decoratedSegmentCount];
+        const b = riverBanks[decoratedSegmentCount + 1];
+        addDecorationsForSegment(a, b, 'left');
+        addDecorationsForSegment(a, b, 'right');
+        decoratedSegmentCount += 1;
+    }
+}
+
+function pruneLandDecorations() {
+    const minVisibleY = cameraY - 180;
+    for (let i = landDecorations.length - 1; i >= 0; i -= 1) {
+        if (landDecorations[i].y < minVisibleY) {
+            landDecorations.splice(i, 1);
+        }
+    }
+}
+
+function renderLandDecorations() {
+    if (!landDecorations || landDecorations.length === 0) {
+        return;
+    }
+
+    const scale = canvas.width / worldWidth;
+    const viewportBottom = cameraY + (canvas.height / scale);
+
+    for (const item of landDecorations) {
+        if (item.y < cameraY - 24 || item.y > viewportBottom + 24) {
+            continue;
+        }
+
+        const p = worldToCanvas(item.x, item.y);
+
+        if (item.kind === 'tree') {
+            const trunkW = Math.max(2, item.size * 0.25);
+            const trunkH = Math.max(4, item.size * 0.8);
+            const canopyR = Math.max(4, item.size);
+            ctx.fillStyle = '#5b3212';
+            ctx.fillRect(p.x - trunkW / 2, p.y - trunkH * 0.65, trunkW, trunkH);
+            ctx.fillStyle = `rgba(${Math.round(18 * item.tone)}, ${Math.round(118 * item.tone)}, ${Math.round(26 * item.tone)}, 0.95)`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y - trunkH, canopyR, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(p.x - canopyR * 0.45, p.y - trunkH * 0.8, canopyR * 0.6, 0, Math.PI * 2);
+            ctx.arc(p.x + canopyR * 0.45, p.y - trunkH * 0.8, canopyR * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+            continue;
+        }
+
+        if (item.kind === 'bush') {
+            const r = Math.max(3, item.size);
+            ctx.fillStyle = `rgba(${Math.round(30 * item.tone)}, ${Math.round(130 * item.tone)}, ${Math.round(38 * item.tone)}, 0.95)`;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+            ctx.arc(p.x - r * 0.7, p.y + 1, r * 0.6, 0, Math.PI * 2);
+            ctx.arc(p.x + r * 0.7, p.y + 1, r * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+            continue;
+        }
+
+        const rr = Math.max(3, item.size);
+        const c = Math.round(118 * item.tone);
+        ctx.fillStyle = `rgb(${c},${c},${c})`;
+        ctx.beginPath();
+        ctx.moveTo(p.x - rr, p.y + rr * 0.3);
+        ctx.lineTo(p.x - rr * 0.25, p.y - rr);
+        ctx.lineTo(p.x + rr * 0.7, p.y - rr * 0.35);
+        ctx.lineTo(p.x + rr * 0.9, p.y + rr * 0.45);
+        ctx.lineTo(p.x + rr * 0.1, p.y + rr);
         ctx.closePath();
         ctx.fill();
     }
@@ -199,8 +441,13 @@ function renderEntities() {
         if (entity.kind === 'helicopter') {
             const hscale = canvas.width / worldWidth;
             const hpos = worldToCanvas(entity.x, entity.y);
+            const direction = Number(entity.direction) || 1;
             ctx.save();
             ctx.translate(hpos.x, hpos.y);
+            // Mirror horizontally if facing right (direction = -1)
+            if (direction > 0) {
+                ctx.scale(-1, 1);
+            }
             // Tail boom
             ctx.fillStyle = '#3a7a2a';
             ctx.fillRect(10, -2, 16, 4);
@@ -431,7 +678,12 @@ async function connect() {
                 if (msg.payload && msg.payload.render_config) {
                     worldWidth = Number(msg.payload.render_config.world_width || worldWidth);
                     viewportHeight = Number(msg.payload.render_config.viewport_height || viewportHeight);
+                    const configuredCoverage = Number(msg.payload.render_config.land_decoration_coverage);
+                    if (Number.isFinite(configuredCoverage)) {
+                        landDecorationCoverage = clamp01(configuredCoverage);
+                    }
                     canvas.height = viewportHeight;
+                    syncLandDecorationsToBanks(true);
                 }
                 isGameOver = false;
                 restartBtn.disabled = true;
@@ -447,6 +699,7 @@ async function connect() {
                 if (msg.payload.event_type === 'game_restarted') {
                     isGameOver = false;
                     restartBtn.disabled = true;
+                    syncLandDecorationsToBanks(true);
                     setStatus('Game restarted. Use Left/Right arrow keys to move, Space to fire.');
                 }
                 const crashEvents = ['collision_bank', 'collision_bridge', 'crash_fuel', 'collision_helicopter', 'collision_tank_missile', 'collision_jet'];
@@ -464,9 +717,11 @@ async function connect() {
                 }
                 if (typeof msg.payload.camera_y === 'number') {
                     cameraY = msg.payload.camera_y;
+                    pruneLandDecorations();
                 }
                 if (Array.isArray(msg.payload.river_banks)) {
                     riverBanks = msg.payload.river_banks;
+                    syncLandDecorationsToBanks();
                 }
                 setStatus(`Plane x=${plane.x}, y=${plane.y}, camera=${cameraY.toFixed(1)}`);
             }

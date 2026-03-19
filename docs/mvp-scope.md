@@ -44,7 +44,6 @@ Deliver a playable single-player prototype where the player can:
 
 ## Not Yet Implemented
 
-- Persistent profile/highscore storage.
 - Registration, refresh, and logout flows.
 - Multi-player or shared-world sessions.
 - Dedicated cache/login service.

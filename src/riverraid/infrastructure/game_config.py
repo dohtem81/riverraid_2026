@@ -27,6 +27,9 @@ class GameConfig:
     bank_margin: float
     river_width_variation_step: float
 
+    # ── Rendering ─────────────────────────────────────────────────────────────
+    land_decoration_coverage: float
+
     # ── Plane ─────────────────────────────────────────────────────────────────
     plane_half_width: float
     step_x: float
@@ -101,6 +104,9 @@ def load_game_config(path: Path | None = None) -> GameConfig:
     scroll_speed: float = float(raw["scroll_speed"])
     plane_width = plane_half_width * 2
     fuel_station_letter_count: int = int(raw["fuel_station_letter_count"])
+    land_decoration_coverage = float(raw.get("land_decoration_coverage", 0.20))
+    if not 0.0 <= land_decoration_coverage <= 1.0:
+        raise ValueError("land_decoration_coverage must be between 0.0 and 1.0")
 
     return GameConfig(
         # World
@@ -114,6 +120,8 @@ def load_game_config(path: Path | None = None) -> GameConfig:
         river_max_width=float(raw["river_max_width"]),
         bank_margin=float(raw["bank_margin"]),
         river_width_variation_step=float(raw["river_width_variation_step"]),
+        # Rendering
+        land_decoration_coverage=land_decoration_coverage,
         # Plane
         plane_half_width=plane_half_width,
         step_x=float(raw["step_x"]),

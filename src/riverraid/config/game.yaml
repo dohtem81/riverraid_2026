@@ -43,6 +43,10 @@ bank_margin: 60.0
 # Controls how quickly the river bends / narrows from one segment to the next.
 river_width_variation_step: 18.0
 
+# Fraction of land area decorated with trees, bushes, and rocks.
+# 0.20 means decorations target ~20% of the land surface area.
+land_decoration_coverage: 0.20
+
 # ── Plane ────────────────────────────────────────────────────────────────────
 
 # Half the plane's collision box width.

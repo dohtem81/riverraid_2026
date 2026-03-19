@@ -403,6 +403,8 @@ class WebSocketGateway:
         next_helicopter_y: float,
         river_banks: list[dict],
         target_y: float,
+        spawn_multiplier: float = 1.0,
+        level: int = 1,
     ) -> tuple[list[dict], int, float]:
         return self._runtime._ensure_helicopters_until(
             helicopters=helicopters,
@@ -410,6 +412,8 @@ class WebSocketGateway:
             next_helicopter_y=next_helicopter_y,
             river_banks=river_banks,
             target_y=target_y,
+            spawn_multiplier=spawn_multiplier,
+            level=level,
         )
 
     def _ensure_jets_until(

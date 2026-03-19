@@ -356,35 +356,51 @@ class GameSessionService:
         river_banks: list[dict],
         target_y: float,
         spawn_multiplier: float = 1.0,
+        level: int = 1,
     ) -> tuple[list[dict], int, float]:
         c = self._cfg
         effective_spacing = c.helicopter_min_spacing / max(0.1, spawn_multiplier)
+        group_size = max(1, level)  # Level 1 ← 1 helicopter, Level 2 ← max 2, etc.
+        vertical_stack_spacing = c.helicopter_height * 1.5  # Vertical offset between helicopters in a group
         while next_helicopter_y <= target_y:
-            heli_y = next_helicopter_y + random.uniform(effective_spacing * 0.3, effective_spacing)
-            if heli_y > target_y:
+            group_y = next_helicopter_y + random.uniform(effective_spacing * 0.3, effective_spacing)
+            if group_y > target_y:
                 break
-            left_x, right_x = self.bank_bounds_at_y(river_banks=river_banks, y=heli_y)
+            left_x, right_x = self.bank_bounds_at_y(river_banks=river_banks, y=group_y)
             if (right_x - left_x) < c.helicopter_width * 2:
-                next_helicopter_y = heli_y + effective_spacing
+                next_helicopter_y = group_y + effective_spacing
                 continue
             half_w = c.helicopter_width / 2
             left_bound = left_x + half_w
             right_bound = right_x - half_w
-            side = random.choice(["left", "right"])
-            start_x = left_bound if side == "left" else right_bound
-            helicopters.append({
-                "id": f"heli_{next_helicopter_id}",
-                "x": round(start_x, 2),
-                "y": round(heli_y, 2),
-                "width": c.helicopter_width,
-                "height": c.helicopter_height,
-                "speed": c.helicopter_speed,
-                "direction": 1 if side == "left" else -1,
-                "left_bound": round(left_bound, 2),
-                "right_bound": round(right_bound, 2),
-            })
-            next_helicopter_id += 1
-            next_helicopter_y = heli_y + effective_spacing
+            # Spawn a group: stack helicopters vertically with random X positions
+            for offset_idx in range(group_size):
+                # Vertical stacking: each helicopter in group gets a different Y
+                heli_y = group_y + (offset_idx * vertical_stack_spacing)
+                # Get bounds for this specific Y position (in case river curves)
+                heli_left_x, heli_right_x = self.bank_bounds_at_y(river_banks=river_banks, y=heli_y)
+                heli_left_bound = heli_left_x + half_w
+                heli_right_bound = heli_right_x - half_w
+                # Random X position within the river
+                if heli_right_bound > heli_left_bound:
+                    start_x = random.uniform(heli_left_bound, heli_right_bound)
+                else:
+                    start_x = (heli_left_bound + heli_right_bound) / 2
+                # Random starting direction
+                direction = random.choice([1, -1])
+                helicopters.append({
+                    "id": f"heli_{next_helicopter_id}",
+                    "x": round(start_x, 2),
+                    "y": round(heli_y, 2),
+                    "width": c.helicopter_width,
+                    "height": c.helicopter_height,
+                    "speed": c.helicopter_speed,
+                    "direction": direction,
+                    "left_bound": round(heli_left_bound, 2),
+                    "right_bound": round(heli_right_bound, 2),
+                })
+                next_helicopter_id += 1
+            next_helicopter_y = group_y + effective_spacing
         return helicopters, next_helicopter_id, next_helicopter_y
 
     @staticmethod

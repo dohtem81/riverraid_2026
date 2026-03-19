@@ -59,6 +59,7 @@ def test_ws_join_valid_token_returns_join_ack(client):
         assert message["payload"]["tick_rate"] == 30
         assert message["payload"]["render_config"]["world_width"] == 1000.0
         assert message["payload"]["render_config"]["viewport_height"] == 600.0
+        assert message["payload"]["render_config"]["land_decoration_coverage"] == 0.20
 
         snapshot = _receive_until_type(websocket, "snapshot")
         assert snapshot["type"] == "snapshot"
@@ -900,6 +901,7 @@ def test_ensure_helicopters_until_spawns_helicopters():
         next_helicopter_y=0.0,
         river_banks=river_banks,
         target_y=gateway._helicopter_min_spacing * 3,  # Increase target to spawn more
+        level=1,
     )
 
     assert len(helicopters) >= 2
@@ -934,11 +936,69 @@ def test_helicopters_alternate_spawn_sides():
             next_helicopter_y=next_y,
             river_banks=river_banks,
             target_y=next_y + gateway._helicopter_min_spacing,
+            level=1,
         )
 
     # Check that we got multiple helicopters with different starting sides
     directions = [h["direction"] for h in helicopters]
     assert 1 in directions and -1 in directions
+
+
+def test_helicopter_grouping_by_level():
+    """Verify that helicopters spawn in groups matching the level, stacked vertically."""
+    random.seed(456)
+    gateway = WebSocketGateway(validate_join_token=None)  # type: ignore[arg-type]
+    bridge_center = gateway._world_width / 2
+    river_banks = [
+        {
+            "y": float(i * gateway._segment_height),
+            "left_x": bridge_center - gateway._river_max_width / 2,
+            "right_x": bridge_center + gateway._river_max_width / 2,
+        }
+        for i in range(0, int(gateway._helicopter_min_spacing * 4) + 1, 1)
+    ]
+
+    # Level 1: max 1 per group
+    helicopters_l1, _, _ = gateway._ensure_helicopters_until(
+        helicopters=[],
+        next_helicopter_id=1,
+        next_helicopter_y=0.0,
+        river_banks=river_banks,
+        target_y=gateway._helicopter_min_spacing * 3,
+        level=1,
+    )
+
+    # Level 2: max 2 per group, should have roughly double the helicopters
+    helicopters_l2, _, _ = gateway._ensure_helicopters_until(
+        helicopters=[],
+        next_helicopter_id=1,
+        next_helicopter_y=0.0,
+        river_banks=river_banks,
+        target_y=gateway._helicopter_min_spacing * 3,
+        level=2,
+    )
+
+    assert len(helicopters_l2) >= len(helicopters_l1) * 1.5  # ~2x more with level 2
+    
+    # Verify helicopters in level 2 groups are stacked vertically (different Y values)
+    # and have random X positions
+    y_positions_l2 = {}
+    for heli in helicopters_l2:
+        y = heli["y"]
+        if y not in y_positions_l2:
+            y_positions_l2[y] = []
+        y_positions_l2[y].append(heli["x"])
+    
+    # At least one group should have multiple helicopters (different Y values at close proximity)
+    vertical_stacks = 0
+    for y in sorted(y_positions_l2.keys()):
+        # Check if there's another helicopter within expected vertical stack spacing
+        for other_y in y_positions_l2.keys():
+            if y < other_y < y + gateway._helicopter_height * 1.5:
+                vertical_stacks += 1
+                break
+    
+    assert vertical_stacks >= 1  # At least one vertical stack found
 
 
 def test_advance_helicopters_moves_side_to_side():
