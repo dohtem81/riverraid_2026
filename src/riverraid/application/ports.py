@@ -18,13 +18,21 @@ class TokenServicePort(Protocol):
 
 
 class GameResultRepositoryPort(Protocol):
-    async def save(
+    async def create_game_started(
         self,
         *,
+        session_id: str,
         pilot_name: str,
+        started_at: datetime,
+    ) -> None:
+        ...
+
+    async def update_game_finished(
+        self,
+        *,
+        session_id: str,
         score: int,
         level: int,
-        started_at: datetime,
         finished_at: datetime,
     ) -> None:
         ...

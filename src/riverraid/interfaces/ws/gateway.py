@@ -44,6 +44,7 @@ class WebSocketGateway:
         last_update_time = time.monotonic()
         current_player: AuthenticatedPlayer | None = None
         game_started_at: datetime | None = None
+        current_game_id: str | None = None
 
         try:
             while True:
@@ -55,7 +56,7 @@ class WebSocketGateway:
                         server_seq += 1
                         await self._emit_event(websocket, session_id, server_seq, world_event)
                         if game_over:
-                            await self._persist_game_over(current_player, g, game_started_at)
+                            await self._persist_game_over(current_player, g, game_started_at, current_game_id)
                             server_seq += 1
                             await self._emit_game_over(websocket, session_id, server_seq)
                         else:
@@ -93,6 +94,8 @@ class WebSocketGateway:
                     game_over = False
                     current_player = player
                     game_started_at = datetime.now(UTC)
+                    current_game_id = f"game_{uuid4().hex}"
+                    await self._persist_game_started(player, current_game_id, game_started_at)
                     self._runtime.reset_for_new_game(g)
                     server_seq = 1
                     await websocket.send_json(
@@ -116,6 +119,8 @@ class WebSocketGateway:
                         continue
                     game_over = False
                     game_started_at = datetime.now(UTC)
+                    current_game_id = f"game_{uuid4().hex}"
+                    await self._persist_game_started(current_player, current_game_id, game_started_at)
                     self._runtime.reset_for_new_game(g)
                     server_seq += 1
                     await self._emit_event(
@@ -178,7 +183,7 @@ class WebSocketGateway:
                         server_seq += 1
                         await self._emit_event(websocket, session_id, server_seq, collision_event)
                         if game_over:
-                            await self._persist_game_over(current_player, g, game_started_at)
+                            await self._persist_game_over(current_player, g, game_started_at, current_game_id)
                             server_seq += 1
                             await self._emit_game_over(websocket, session_id, server_seq)
                     server_seq += 1
@@ -237,7 +242,7 @@ class WebSocketGateway:
                         server_seq += 1
                         await self._emit_event(websocket, session_id, server_seq, collision_event)
                         if game_over:
-                            await self._persist_game_over(current_player, g, game_started_at)
+                            await self._persist_game_over(current_player, g, game_started_at, current_game_id)
                             server_seq += 1
                             await self._emit_game_over(websocket, session_id, server_seq)
                     server_seq += 1
@@ -266,23 +271,41 @@ class WebSocketGateway:
             }
         )
 
+    async def _persist_game_started(
+        self,
+        player: AuthenticatedPlayer | None,
+        game_id: str | None,
+        started_at: datetime | None,
+    ) -> None:
+        """Insert a game-started row when a new game begins."""
+        if self._game_result_repo is None or player is None or game_id is None or started_at is None:
+            return
+        try:
+            await self._game_result_repo.create_game_started(
+                session_id=game_id,
+                pilot_name=player.username,
+                started_at=started_at,
+            )
+        except Exception:  # pragma: no cover – never crash the game loop
+            pass
+
     async def _persist_game_over(
         self,
         player: AuthenticatedPlayer | None,
         g: _SessionState,
         started_at: datetime | None,
+        game_id: str | None = None,
     ) -> None:
-        """Save the finished game to persistent storage if a repository is wired."""
-        if self._game_result_repo is None or player is None or started_at is None:
+        """Update the game record with final score, level, and finish timestamp."""
+        if self._game_result_repo is None or player is None or started_at is None or game_id is None:
             return
         score = g.plane_state.score if g.plane_state else 0
         level = g.level
         try:
-            await self._game_result_repo.save(
-                pilot_name=player.username,
+            await self._game_result_repo.update_game_finished(
+                session_id=game_id,
                 score=score,
                 level=level,
-                started_at=started_at,
                 finished_at=datetime.now(UTC),
             )
         except Exception:  # pragma: no cover – never crash the game loop

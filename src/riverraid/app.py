@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from riverraid.application.session_runtime import SessionRuntime
 from riverraid.application.use_cases import LoginWithConfiguredCredentials, ValidateJoinToken
-from riverraid.infrastructure.database import dispose_engine, init_db, setup_engine
+from riverraid.infrastructure.database import dispose_engine, init_db, migrate_db, setup_engine
 from riverraid.infrastructure.game_config import load_game_config
 from riverraid.infrastructure.game_result_repository import GameResultRepository
 import riverraid.infrastructure.models  # noqa: F401 – registers ORM models with Base.metadata
@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         setup_engine(settings.database_url)
         await init_db()
+        await migrate_db()
         yield
         await dispose_engine()
 

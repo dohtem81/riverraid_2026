@@ -24,10 +24,14 @@ class _DummyValidateJoinToken:
 
 class _RecordingRepo:
     def __init__(self) -> None:
-        self.calls: list[dict] = []
+        self.started_calls: list[dict] = []
+        self.finished_calls: list[dict] = []
 
-    async def save(self, **kwargs) -> None:
-        self.calls.append(kwargs)
+    async def create_game_started(self, **kwargs) -> None:
+        self.started_calls.append(kwargs)
+
+    async def update_game_finished(self, **kwargs) -> None:
+        self.finished_calls.append(kwargs)
 
 
 class _FakeScoresRepo:
@@ -58,25 +62,43 @@ async def _repo_roundtrip() -> list[dict]:
 
         repo = GameResultRepository()
         now = datetime.now(UTC)
-        await repo.save(
+
+        sid_low = "game-roundtrip-low"
+        await repo.create_game_started(
+            session_id=sid_low,
             pilot_name="pilot_low",
+            started_at=now - timedelta(minutes=5),
+        )
+        await repo.update_game_finished(
+            session_id=sid_low,
             score=100,
             level=2,
-            started_at=now - timedelta(minutes=5),
             finished_at=now - timedelta(minutes=4),
         )
-        await repo.save(
+
+        sid_high = "game-roundtrip-high"
+        await repo.create_game_started(
+            session_id=sid_high,
             pilot_name="pilot_high",
+            started_at=now - timedelta(minutes=3),
+        )
+        await repo.update_game_finished(
+            session_id=sid_high,
             score=999,
             level=8,
-            started_at=now - timedelta(minutes=3),
             finished_at=now - timedelta(minutes=2),
         )
-        await repo.save(
+
+        sid_mid = "game-roundtrip-mid"
+        await repo.create_game_started(
+            session_id=sid_mid,
             pilot_name="pilot_mid",
+            started_at=now - timedelta(minutes=1),
+        )
+        await repo.update_game_finished(
+            session_id=sid_mid,
             score=500,
             level=5,
-            started_at=now - timedelta(minutes=1),
             finished_at=now,
         )
 
@@ -118,7 +140,7 @@ def test_scores_router_all_games_returns_full_rows():
             "score": 400,
             "level": 3,
             "started_at": "2026-03-17T09:50:00+00:00",
-            "finished_at": "2026-03-17T09:55:00+00:00",
+            "finished_at": None,
         },
     ]
     fake_repo = _FakeScoresRepo(expected)
@@ -142,7 +164,36 @@ def test_game_result_repository_roundtrip_returns_sorted_top_scores():
     assert rows[1]["score"] == 500
 
 
-def test_gateway_persist_game_over_saves_score_level_and_name():
+def test_gateway_persist_game_started_records_pilot_and_session():
+    repo = _RecordingRepo()
+    gateway = WebSocketGateway(validate_join_token=_DummyValidateJoinToken(), game_result_repo=repo)
+    started_at = datetime.now(UTC)
+    player = AuthenticatedPlayer(player_id="p1", username="ace")
+    game_id = "game-abc123"
+
+    asyncio.run(gateway._persist_game_started(player, game_id, started_at))
+
+    assert len(repo.started_calls) == 1
+    call = repo.started_calls[0]
+    assert call["session_id"] == game_id
+    assert call["pilot_name"] == "ace"
+    assert call["started_at"] == started_at
+
+
+def test_gateway_persist_game_started_noop_without_player_or_game_id():
+    repo = _RecordingRepo()
+    gateway = WebSocketGateway(validate_join_token=_DummyValidateJoinToken(), game_result_repo=repo)
+    player = AuthenticatedPlayer(player_id="p1", username="ace")
+    started_at = datetime.now(UTC)
+
+    asyncio.run(gateway._persist_game_started(None, "game-x", started_at))
+    asyncio.run(gateway._persist_game_started(player, None, started_at))
+    asyncio.run(gateway._persist_game_started(player, "game-x", None))
+
+    assert repo.started_calls == []
+
+
+def test_gateway_persist_game_over_saves_score_level_and_game_id():
     repo = _RecordingRepo()
     gateway = WebSocketGateway(validate_join_token=_DummyValidateJoinToken(), game_result_repo=repo)
     started_at = datetime.now(UTC) - timedelta(minutes=2)
@@ -151,24 +202,27 @@ def test_gateway_persist_game_over_saves_score_level_and_name():
         level=4,
     )
     player = AuthenticatedPlayer(player_id="p1", username="ace")
+    game_id = "game-finish-01"
 
-    asyncio.run(gateway._persist_game_over(player, state, started_at))
+    asyncio.run(gateway._persist_game_over(player, state, started_at, game_id))
 
-    assert len(repo.calls) == 1
-    call = repo.calls[0]
-    assert call["pilot_name"] == "ace"
+    assert len(repo.finished_calls) == 1
+    call = repo.finished_calls[0]
+    assert call["session_id"] == game_id
     assert call["score"] == 345
     assert call["level"] == 4
-    assert call["started_at"] == started_at
     assert isinstance(call["finished_at"], datetime)
 
 
-def test_gateway_persist_game_over_noop_without_player_or_start():
+def test_gateway_persist_game_over_noop_without_player_start_or_game_id():
     repo = _RecordingRepo()
     gateway = WebSocketGateway(validate_join_token=_DummyValidateJoinToken(), game_result_repo=repo)
     state = SessionState(plane_state=Plane(x=0, y=0, vx=0, vy=0, fuel=0, hp=0, score=100), level=2)
+    player = AuthenticatedPlayer(player_id="p1", username="ace")
+    started_at = datetime.now(UTC)
 
-    asyncio.run(gateway._persist_game_over(None, state, datetime.now(UTC)))
-    asyncio.run(gateway._persist_game_over(AuthenticatedPlayer(player_id="p1", username="ace"), state, None))
+    asyncio.run(gateway._persist_game_over(None, state, started_at, "game-x"))
+    asyncio.run(gateway._persist_game_over(player, state, None, "game-x"))
+    asyncio.run(gateway._persist_game_over(player, state, started_at, None))
 
-    assert repo.calls == []
+    assert repo.finished_calls == []

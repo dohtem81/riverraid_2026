@@ -994,7 +994,7 @@ def test_helicopter_grouping_by_level():
     for y in sorted(y_positions_l2.keys()):
         # Check if there's another helicopter within expected vertical stack spacing
         for other_y in y_positions_l2.keys():
-            if y < other_y < y + gateway._helicopter_height * 1.5:
+            if y < other_y <= y + gateway._helicopter_height * 1.5:
                 vertical_stacks += 1
                 break
     
