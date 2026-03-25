@@ -8,7 +8,7 @@
   - **`SessionRuntime`** (application layer): owns all game-tick orchestration — world generation, entity advancement, collision resolution, key-state movement, missile/tank logic.
   - **`WebSocketGateway`** (interface adapter): thin transport delegate — decodes/validates WS messages, calls `SessionRuntime`, encodes responses.
 - Input uses a key-state model (`keydown`/`keyup`): the server holds a `keys_down` set per session and applies continuous movement each tick without OS key-repeat delay.
-- PostgreSQL is integrated for completed game-result persistence and top-score queries.
+- PostgreSQL is integrated for game-session persistence: a row is inserted at game start and updated at game finish, enabling tracking of started-but-abandoned games.
 
 ## High-Level
 
@@ -90,7 +90,7 @@ Architecture fitness checks:
 ## Data Ownership
 
 - **Authoritative runtime state:** in-memory inside session runtime.
-- **Durable state:** PostgreSQL `game_results` table for completed runs and leaderboard queries.
+- **Durable state:** PostgreSQL `game_results` table — rows inserted at game start, updated at game finish; `finished_at IS NULL` identifies abandoned sessions.
 - **Future durable state:** optional `players`, `player_sessions`, `player_checkpoints`.
 - **Cache/transient state:** Redis optional; never authoritative for simulation.
 

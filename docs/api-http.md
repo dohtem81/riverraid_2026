@@ -80,7 +80,7 @@ Validation behavior:
 
 ### `GET /scores`
 
-Returns the top 10 completed game results ordered by score descending.
+Returns the top 10 **finished** game results ordered by score descending. In-progress (abandoned) games are excluded.
 
 Response `200`:
 ```json
@@ -97,6 +97,36 @@ Response `200`:
 Notes:
 - Used by the demo page leaderboard.
 - Queried before the first game and after every game over.
+
+### `GET /games`
+
+Returns all game rows (both finished and in-progress/abandoned), ordered by `started_at` descending.
+
+Response `200`:
+```json
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "pilot_name": "captain_neo",
+    "score": 1200,
+    "level": 7,
+    "started_at": "2026-03-17T09:57:00+00:00",
+    "finished_at": "2026-03-17T10:00:00+00:00"
+  },
+  {
+    "id": "660e9511-f30c-52e5-b827-557766551111",
+    "pilot_name": "rookie",
+    "score": 0,
+    "level": 1,
+    "started_at": "2026-03-17T10:05:00+00:00",
+    "finished_at": null
+  }
+]
+```
+
+Notes:
+- `finished_at: null` indicates the game was started but not finished (player disconnected or abandoned).
+- Useful for tracking engagement and abandonment rates.
 
 ### `POST /auth/register`
 

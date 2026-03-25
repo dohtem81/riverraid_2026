@@ -5,7 +5,7 @@
 - Implemented as a single FastAPI process with one WebSocket gateway.
 - Auth is config-backed (`/api/v1/auth/login`) with JWT token issuance.
 - WebSocket join validates JWT and runs server-authoritative single-player simulation.
-- Database/cache-backed persistence is not implemented yet.
+- Persistence is implemented: a `game_results` row is inserted at game start and updated at game finish. `finished_at IS NULL` identifies abandoned sessions.
 
 ## Purpose
 
@@ -115,12 +115,13 @@ This is the only writer for in-memory match state.
 ### 4) Persistence Adapter
 
 Responsibilities:
-- Load durable player state at join/spawn.
-- Persist checkpoints and session-end outcomes.
+- Insert a `game_results` row at game start (pilot name, session ID, start timestamp).
+- Update the row at game end with final score, level, and finish timestamp.
+- Expose `finished_at IS NULL` rows to identify started-but-abandoned games.
 - Write highscores and progression.
 
 Status:
-- Planned, not implemented in current code.
+- Implemented. `GameResultRepository` (`infrastructure/game_result_repository.py`) provides `create_game_started()` and `update_game_finished()`. Schema migrations are applied automatically at startup via `migrate_db()` (`infrastructure/database.py`).
 
 Avoid per-tick DB writes. Use checkpointed or event-triggered persistence.
 
@@ -154,17 +155,19 @@ Status:
 
 ### Persist
 
-- On bridge reached, death, refuel milestone, or match end: write durable updates.
+- On game start (`join` or `restart`): insert a `game_results` row with pilot name, session ID, and start timestamp (`finished_at = NULL`).
+- On game over: update the row with final score, level, and finish timestamp.
+- Games where `finished_at` remains NULL represent abandoned sessions.
 
 Current status:
-- Not implemented yet.
+- Implemented.
 
 ## Scaling Plan
 
 ### Phase 1 (MVP)
 
 - 1 service instance.
-- No required database/cache for current runtime.
+- PostgreSQL required for game-session tracking and leaderboard.
 - Single-player sessions only (one player per session).
 
 ### Phase 2
