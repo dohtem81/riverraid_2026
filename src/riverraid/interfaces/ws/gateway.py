@@ -98,7 +98,7 @@ class WebSocketGateway:
                     game_over = False
                     current_player = player
                     game_started_at = datetime.now(UTC)
-                    current_game_id = f"game_{uuid4().hex}"
+                    current_game_id = str(uuid4())
                     await self._persist_game_started(player, current_game_id, game_started_at)
                     self._runtime.reset_for_new_game(g)
                     server_seq = 1
@@ -123,7 +123,7 @@ class WebSocketGateway:
                         continue
                     game_over = False
                     game_started_at = datetime.now(UTC)
-                    current_game_id = f"game_{uuid4().hex}"
+                    current_game_id = str(uuid4())
                     await self._persist_game_started(current_player, current_game_id, game_started_at)
                     self._runtime.reset_for_new_game(g)
                     server_seq += 1
