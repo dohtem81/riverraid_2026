@@ -31,8 +31,10 @@ class GameResultRepositoryPort(Protocol):
         self,
         *,
         session_id: str,
+        pilot_name: str,
         score: int,
         level: int,
+        started_at: datetime,
         finished_at: datetime,
     ) -> None:
         ...

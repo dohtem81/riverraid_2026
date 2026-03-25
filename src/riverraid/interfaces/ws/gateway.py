@@ -1,9 +1,13 @@
 import asyncio
 from datetime import UTC, datetime
+import logging
 import time
 from uuid import uuid4
 
+_log = logging.getLogger(__name__)
+
 from fastapi import WebSocket
+from starlette.websockets import WebSocketDisconnect
 
 from riverraid.application.ports import GameResultRepositoryPort
 from riverraid.application.session_runtime import SessionRuntime, SessionState as _SessionState
@@ -252,6 +256,8 @@ class WebSocketGateway:
                 await websocket.send_json(
                     self._error_payload(seq=seq, code="INVALID_TYPE", message="Unknown message type")
                 )
+        except WebSocketDisconnect:
+            pass  # client navigated away or closed the tab – not an error
         except Exception:
             await websocket.close()
 
@@ -286,8 +292,8 @@ class WebSocketGateway:
                 pilot_name=player.username,
                 started_at=started_at,
             )
-        except Exception:  # pragma: no cover – never crash the game loop
-            pass
+        except Exception:
+            _log.exception("Failed to record game-started for session_id=%s", game_id)
 
     async def _persist_game_over(
         self,
@@ -296,7 +302,11 @@ class WebSocketGateway:
         started_at: datetime | None,
         game_id: str | None = None,
     ) -> None:
-        """Update the game record with final score, level, and finish timestamp."""
+        """Upsert the game record with final score, level, and finish timestamp.
+
+        Uses an upsert so that even if _persist_game_started failed (e.g. due to
+        a schema migration lag) the finished result is always stored.
+        """
         if self._game_result_repo is None or player is None or started_at is None or game_id is None:
             return
         score = g.plane_state.score if g.plane_state else 0
@@ -304,12 +314,14 @@ class WebSocketGateway:
         try:
             await self._game_result_repo.update_game_finished(
                 session_id=game_id,
+                pilot_name=player.username,
                 score=score,
                 level=level,
+                started_at=started_at,
                 finished_at=datetime.now(UTC),
             )
-        except Exception:  # pragma: no cover – never crash the game loop
-            pass
+        except Exception:
+            _log.exception("Failed to record game-finished for session_id=%s", game_id)
 
     async def _emit_game_over(self, websocket: WebSocket, session_id: str, seq: int) -> None:
         await self._emit_event(websocket, session_id, seq, {"event_type": "game_over", "data": {"reason": "no_lives"}})

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import select, text
 
 from riverraid.infrastructure import database
 from riverraid.infrastructure.models import GameResult
@@ -41,20 +41,43 @@ class GameResultRepository:
         self,
         *,
         session_id: str,
+        pilot_name: str,
         score: int,
         level: int,
+        started_at: datetime,
         finished_at: datetime,
     ) -> None:
-        """Update the row for *session_id* with final score, level, and finish timestamp."""
+        """Upsert the row for *session_id* with final score, level, and finish timestamp.
+
+        Uses INSERT ... ON CONFLICT so that even if the game-started row was never
+        written (e.g. due to a transient DB error at game start) the finished result
+        is still persisted.
+        """
         session_factory = database._session_factory
         if session_factory is None:
             raise RuntimeError("Database not initialised – call setup_engine() first")
 
         async with session_factory() as session:
             await session.execute(
-                update(GameResult)
-                .where(GameResult.session_id == session_id)
-                .values(score=score, level=level, finished_at=finished_at)
+                text(
+                    """
+                    INSERT INTO game_results (id, session_id, pilot_name, score, level, started_at, finished_at)
+                    VALUES (:id, :session_id, :pilot_name, :score, :level, :started_at, :finished_at)
+                    ON CONFLICT (session_id) DO UPDATE SET
+                        score = EXCLUDED.score,
+                        level = EXCLUDED.level,
+                        finished_at = EXCLUDED.finished_at
+                    """
+                ),
+                {
+                    "id": str(uuid.uuid4()),
+                    "session_id": session_id,
+                    "pilot_name": pilot_name,
+                    "score": score,
+                    "level": level,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                },
             )
             await session.commit()
 

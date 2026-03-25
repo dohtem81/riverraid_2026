@@ -71,8 +71,10 @@ async def _repo_roundtrip() -> list[dict]:
         )
         await repo.update_game_finished(
             session_id=sid_low,
+            pilot_name="pilot_low",
             score=100,
             level=2,
+            started_at=now - timedelta(minutes=5),
             finished_at=now - timedelta(minutes=4),
         )
 
@@ -84,8 +86,10 @@ async def _repo_roundtrip() -> list[dict]:
         )
         await repo.update_game_finished(
             session_id=sid_high,
+            pilot_name="pilot_high",
             score=999,
             level=8,
+            started_at=now - timedelta(minutes=3),
             finished_at=now - timedelta(minutes=2),
         )
 
@@ -97,8 +101,10 @@ async def _repo_roundtrip() -> list[dict]:
         )
         await repo.update_game_finished(
             session_id=sid_mid,
+            pilot_name="pilot_mid",
             score=500,
             level=5,
+            started_at=now - timedelta(minutes=1),
             finished_at=now,
         )
 
@@ -209,8 +215,10 @@ def test_gateway_persist_game_over_saves_score_level_and_game_id():
     assert len(repo.finished_calls) == 1
     call = repo.finished_calls[0]
     assert call["session_id"] == game_id
+    assert call["pilot_name"] == "ace"
     assert call["score"] == 345
     assert call["level"] == 4
+    assert call["started_at"] == started_at
     assert isinstance(call["finished_at"], datetime)
 
 
